@@ -1,0 +1,130 @@
+/* ============================================================================
+   SalonOne 管理画面シェル（サイドバー＋上部バー）
+   ----------------------------------------------------------------------------
+   現行画面のスクリーンショットに合わせた共通の外枠。
+   打刻・予約表・勤怠管理はすべてこのシェルの中に入る。
+   移植先は App Router の app/(admin)/layout.tsx 相当。
+
+   ※ サイドバーの背景色はスクショからの目視合わせです。
+      正確な値は既存の Tailwind トークンに差し替えてください。
+   ========================================================================== */
+:root{
+  --side-bg:#0D3B34;          /* サイドバー背景 */
+  --side-on:#17544A;          /* 選択中の項目 */
+  --side-txt:rgba(255,255,255,.80);
+  --side-sec:#C6A664;         /* セクション見出し（ゴールド） */
+  --side-w:264px;
+  --topbar-h:60px;
+}
+
+.app{display:flex; min-height:100vh; align-items:stretch;}
+
+/* ---------------- サイドバー ---------------- */
+.side{
+  width:var(--side-w); flex:0 0 auto; background:var(--side-bg); color:#fff;
+  display:flex; flex-direction:column; overflow-y:auto;
+  position:sticky; top:0; height:100vh;
+}
+.side-head{display:flex; align-items:center; gap:8px; padding:14px 14px 12px;}
+.side-head img{height:30px; width:auto; display:block;}
+.side-collapse{
+  margin-left:auto; color:rgba(255,255,255,.55); width:26px; height:26px;
+  display:flex; align-items:center; justify-content:center; border-radius:6px; font-size:15px;
+}
+.side-collapse:hover{background:rgba(255,255,255,.08); color:#fff;}
+
+.side nav{padding:0 0 18px;}
+.nav-sec{
+  display:flex; align-items:center; gap:7px;
+  color:var(--side-sec); font-size:11.5px; font-weight:600; letter-spacing:.04em;
+  padding:16px 16px 6px; margin:0 8px; border-bottom:1px solid rgba(255,255,255,.10);
+}
+.nav-sec::before{content:''; width:5px; height:5px; border-radius:50%; background:var(--side-sec); flex:0 0 auto;}
+.nav-item{
+  display:flex; align-items:center; gap:10px; color:var(--side-txt);
+  text-decoration:none; font-size:13.5px; padding:9px 16px; margin:1px 8px;
+  border-radius:8px; cursor:pointer;
+}
+.nav-item:hover{background:rgba(255,255,255,.07); color:#fff;}
+.nav-item.on{background:var(--side-on); color:#fff; font-weight:700;}
+.nav-item svg{width:17px; height:17px; flex:0 0 auto; stroke:currentColor; fill:none; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round;}
+.nav-item .caret{margin-left:auto; font-size:10px; opacity:.6;}
+.nav-item.lv2{padding-left:30px; font-size:13px;}
+.nav-item.lv3{padding-left:44px; font-size:13px;}
+
+/* ---------------- 上部バー ---------------- */
+.body{flex:1; min-width:0; display:flex; flex-direction:column;}
+.topbar{
+  height:var(--topbar-h); flex:0 0 auto; background:#fff; border-bottom:1px solid var(--line);
+  display:flex; align-items:center; gap:10px; padding:0 16px;
+  position:sticky; top:0; z-index:35;
+}
+.topbar select{
+  height:36px; border:1px solid var(--line); border-radius:9px; background:#fff;
+  padding:0 8px; font-size:13px; min-width:120px;
+}
+.topbar .tb-right{margin-left:auto; display:flex; align-items:center; gap:10px;}
+.tb-user{display:flex; align-items:center; gap:9px;}
+.tb-ava{
+  width:34px; height:34px; border-radius:50%; background:var(--teal); color:#fff;
+  display:flex; align-items:center; justify-content:center; font-size:12.5px; font-weight:600; flex:0 0 auto;
+}
+.tb-who{font-size:12px; line-height:1.45; white-space:nowrap;}
+.tb-who b{font-weight:600;}
+.tb-who span{color:var(--mut);}
+.tb-btn{
+  height:36px; padding:0 14px; border-radius:9px; font-size:13px; font-weight:600;
+  border:1px solid var(--teal); color:var(--teal); background:#fff; white-space:nowrap;
+}
+.tb-btn.gold{border-color:var(--gold); color:#8A6D2F;}
+
+.tb-burger{display:none; width:36px; height:36px; border-radius:9px; align-items:center; justify-content:center;}
+.tb-burger svg{width:20px; height:20px; stroke:var(--ink); fill:none; stroke-width:1.8; stroke-linecap:round;}
+.tb-logo{display:none;}
+.tb-logo img{height:26px; width:auto; display:block;}
+
+/* ---------------- ページ本体 ---------------- */
+.main{flex:1; min-width:0; padding:20px 22px 48px;}
+.pagehead{display:flex; align-items:center; gap:10px; margin-bottom:16px; flex-wrap:wrap;}
+.pagehead .ic{
+  width:32px; height:32px; border-radius:9px; background:#EAF0EC;
+  display:flex; align-items:center; justify-content:center; flex:0 0 auto;
+}
+.pagehead .ic svg{width:17px; height:17px; stroke:var(--teal); fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round;}
+.pagehead h1{margin:0; font-size:20px; letter-spacing:.02em;}
+.pagehead .sub{font-size:12.5px; color:var(--mut);}
+
+/* ---------------- モバイル ---------------- */
+.scrim{position:fixed; inset:0; background:rgba(15,25,23,.45); z-index:44; display:none;}
+.scrim.show{display:block;}
+
+@media (max-width:1024px){
+  .side{
+    position:fixed; left:0; top:0; z-index:45; height:100dvh;
+    transform:translateX(-100%); box-shadow:2px 0 18px rgba(0,0,0,.2);
+    /* transform だけで画面外へ出すと、閉じていてもキーボードでナビに入れてしまう。
+       visibility:hidden で操作対象から外す（transition に含めて遷移は保つ） */
+    visibility:hidden;
+    transition:transform .2s ease, visibility .2s;
+  }
+  .side.open{transform:translateX(0); visibility:visible;}
+  .tb-burger{display:flex;}
+  .tb-logo{display:block;}
+  .topbar{padding:0 12px; gap:8px;}
+  .topbar select{display:none;}          /* セレクタはドロワーの中へ移す */
+  .tb-btn{display:none;}
+  .tb-who{display:none;}
+  .main{padding:14px 12px 40px;}
+  .pagehead h1{font-size:18px;}
+  /* ドロワー内の店舗セレクタ */
+  .side-picks{display:block; padding:10px 14px 4px;}
+  .side-picks select{
+    width:100%; height:38px; margin-bottom:8px; border-radius:9px;
+    border:1px solid rgba(255,255,255,.22); background:rgba(255,255,255,.08); color:#fff;
+    padding:0 10px; font-size:13px;
+  }
+  .side-picks select option{color:var(--ink);}
+}
+@media (min-width:1025px){
+  .side-picks{display:none;}
+}

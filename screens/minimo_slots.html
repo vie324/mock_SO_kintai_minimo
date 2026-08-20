@@ -3,72 +3,50 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>SalonOne｜予約管理（モバイル）minimo枠操作モック v0.1</title>
+<title>SalonOne｜予約管理（スマホ）minimo連携枠</title>
 <!--
 ================================================================================
-SalonOne モバイル予約管理 / minimo連携枠 UI改善モック v0.1
+[minimo連携枠] スマホの予約表で連携枠を直接編集する  → 移植先: /schedule（スマホ）
 ================================================================================
-■ 目的
-  スマホ表示の予約表で、minimo連携枠（ピンクの縦バー）を
-  「タップ → 拡大表示 → ドラッグで移動・伸縮 → 保存」できるようにする。
-  現状はバーが細く、閲覧専用でスマホから枠調整ができない。
+■ 現状の課題
+  ピンクの縦バーが細く閲覧専用で、スマホから枠を調整できない。
+  タップ判定も狭く誤タップしやすい。変更がminimoへ同期されたか画面から分からない。
 
-■ 操作仕様（このモックで実装済み）
+■ 操作仕様
   1. ピンクのバーをタップ … 編集モード（列全幅の半透明ブロック＋上下ハンドル）
   2. ブロック本体をドラッグ … 枠全体を移動（15分スナップ）
-  3. 上下ハンドルをドラッグ … 開始/終了時刻を伸縮（最小15分）
-  4. 空き時間を長押し(500ms) … 新規枠を60分で作成し編集モードへ
+  3. 上下ハンドルをドラッグ … 開始/終了を伸縮（最小15分）
+  4. 空き時間を長押し(500ms) … 新規枠を60分で作成し編集モードへ（触覚フィードバックあり）
   5. 画面下の操作バー … 時刻表示／削除／キャンセル／保存
   6. 予約・他のminimo枠と重なると赤表示＋保存不可
-  7. 保存/削除で「未同期」バッジが同期ボタンに付く → 同期でクリア（モック挙動）
+  7. 保存/削除で同期ボタンに「未同期件数」バッジ → 同期でクリア
 
 ■ 実装定数
-  DAY_START=9:00 / DAY_END=19:00 / SNAP=15分 / 通常PX15=26px, 短縮表示=16px
-  内部の時刻はすべて「0:00からの分(int)」で保持。
+  DAY_START=9:00 / DAY_END=19:00 / SNAP=15分 / PX15=26px（短縮表示は16px）
+  内部の時刻はすべて「0:00からの分(int)」で保持し、描画時のみpxへ変換する。
 
-■ データモデル案（本実装）
-  minimo_slot { id, store_id, staff_id, start_at, end_at, source:'manual'|'minimo',
-                synced_at(null=未同期), updated_by, updated_at }
-  バリデーション: start<end / 15分単位 / 同一staffの予約・他枠と非重複
-  （営業時間・シフト外の可否は要確認 → handoffメモ参照）
+■ 移植メモ
+  ・Pointer Events(down/move/up + setPointerCapture)は useSlotDrag フックへそのまま移せる
+  ・ドラッグ中は再レンダーせず style を直更新する。毎フレーム setState を呼ぶとスマホでカクつく
+  ・ゴースト／ハンドルには touch-action:none 必須（iOSのスクロール暴発防止）
+  ・楽観更新＋失敗時ロールバック。同期は非同期ジョブなので「未同期」表示を必ず残す
 
-■ API案
+■ API
   GET    /api/stores/:sid/minimo-slots?date=YYYY-MM-DD
   POST   /api/stores/:sid/minimo-slots
   PATCH  /api/minimo-slots/:id
   DELETE /api/minimo-slots/:id
-  POST   /api/stores/:sid/minimo-slots/sync   … minimo側へ反映
-
-■ Next.js移植メモ（駒木さん向け）
-  ・Pointer Events(down/move/up + setPointerCapture)のロジックはそのまま
-    useRef＋カスタムフック(useSlotDrag)へ移植可能。ドラッグ中は再レンダーせず
-    style直更新（本モックと同じ方針）にするとスマホでも60fps出ます。
-  ・CSS変数はtailwind.configのthemeトークンへ対応付け（handoffメモ参照）。
-  ・touch-action:none をゴースト/ハンドルに必ず指定（iOSのスクロール抑止）。
+  POST   /api/stores/:sid/minimo-slots/sync    minimo側へ反映
 ================================================================================
 -->
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/base.css">
 <style>
-:root{
-  --teal:#003737; --teal-2:#0B4A45; --teal-3:#106258;
-  --gold:#C6A664; --gold-soft:#F1E6CF;
-  --cream:#F4F4EF; --paper:#FDFDFB;
-  --ink:#22312F; --mut:#6E7B78; --line:#E4E4DC;
-  --pink:#F43F5E; --pink-soft:rgba(244,63,94,.13);
-  --danger:#DC2626; --danger-soft:rgba(220,38,38,.12);
-  --res-bg:#EAF6EE; --res-bd:#8FC49E; --res-badge:#3E9B5F;
-  --radius:12px;
-}
-*{box-sizing:border-box; touch-action:manipulation;}
-html,body{margin:0; padding:0;}
-body{
-  background:#E7E7E0;
-  font-family:"Hiragino Kaku Gothic ProN","Hiragino Sans","Noto Sans JP","Yu Gothic UI","Yu Gothic",Meiryo,sans-serif;
-  color:var(--ink); font-size:14px; line-height:1.5;
-  -webkit-font-smoothing:antialiased;
-}
-button{font:inherit; color:inherit; background:none; border:none; padding:0; cursor:pointer;}
-button:focus-visible, select:focus-visible{outline:2px solid var(--teal-3); outline-offset:2px; border-radius:6px;}
-select{font:inherit;}
+:root{ --gold-soft:#F1E6CF; --paper:#FDFDFB;
+       --res-bg:#EAF6EE; --res-bd:#8FC49E; --res-badge:#3E9B5F;
+       --danger2:#DC2626; --danger2-soft:rgba(220,38,38,.12); }
+*{touch-action:manipulation;}
+body{background:#E7E7E0;}
 
 .frame{
   max-width:430px; margin:0 auto; min-height:100dvh;
@@ -102,18 +80,13 @@ body.editing .frame{padding-bottom:150px;}
 
 /* ---------- タイトル・日付・操作列 ---------- */
 .titlebar{display:flex; align-items:center; gap:10px; padding:14px 14px 4px;}
-.titleicon{
-  width:34px; height:34px; border-radius:9px; background:#EAF0EC;
-  display:flex; align-items:center; justify-content:center;
-}
+.titleicon{width:34px; height:34px; border-radius:9px; background:#EAF0EC; display:flex; align-items:center; justify-content:center;}
 .titleicon svg{width:18px; height:18px; stroke:var(--teal); fill:none; stroke-width:1.8;}
 .titlebar h1{font-size:19px; margin:0; font-weight:700; letter-spacing:.02em;}
 .toggle{display:flex; align-items:center; gap:8px; margin-left:auto; color:var(--mut); font-size:12px;}
 .switch{position:relative; width:40px; height:22px; flex:0 0 auto;}
 .switch input{position:absolute; inset:0; opacity:0; margin:0; cursor:pointer;}
-.switch i{
-  position:absolute; inset:0; background:#D8D8D0; border-radius:999px; transition:background .15s;
-}
+.switch i{position:absolute; inset:0; background:#D8D8D0; border-radius:999px; transition:background .15s;}
 .switch i::after{
   content:''; position:absolute; top:2px; left:2px; width:18px; height:18px;
   background:#fff; border-radius:50%; box-shadow:0 1px 3px rgba(0,0,0,.25); transition:left .15s;
@@ -122,10 +95,7 @@ body.editing .frame{padding-bottom:150px;}
 .switch input:checked + i::after{left:20px;}
 
 .datebar{display:flex; align-items:center; gap:8px; padding:8px 14px 0;}
-.navbtn{
-  height:36px; min-width:36px; padding:0 12px; border:1px solid var(--line);
-  border-radius:9px; background:#fff; font-size:13px;
-}
+.navbtn{height:36px; min-width:36px; padding:0 12px; border:1px solid var(--line); border-radius:9px; background:#fff; font-size:13px;}
 .datebar .date{font-size:16px; font-weight:700; margin-left:4px;}
 .datebar .caret{color:var(--mut); font-size:11px;}
 .lastsync{padding:2px 14px 0; font-size:11px; color:var(--mut); text-align:right;}
@@ -181,10 +151,7 @@ body.editing .frame{padding-bottom:150px;}
 /* ---------- タイムグリッド ---------- */
 .board{display:flex; background:var(--paper);}
 .gutter{width:48px; flex:0 0 auto; position:relative;}
-.hlabel{
-  position:absolute; right:8px; transform:translateY(-50%);
-  font-size:11px; color:var(--mut); font-variant-numeric:tabular-nums;
-}
+.hlabel{position:absolute; right:8px; transform:translateY(-50%); font-size:11px; color:var(--mut); font-variant-numeric:tabular-nums;}
 .cols{flex:1; position:relative; display:flex;}
 .gridlines{position:absolute; left:0; right:0; top:0; pointer-events:none;}
 .gl{position:absolute; left:0; right:0; border-top:1px solid var(--line);}
@@ -195,21 +162,12 @@ body.editing .frame{padding-bottom:150px;}
   border-left:1px dashed #EFE3E6; pointer-events:none;
 }
 .items{position:absolute; inset:0;}
-.nowline{
-  position:absolute; left:0; right:0; height:0; border-top:1.5px solid var(--pink);
-  pointer-events:none; z-index:5;
-}
-.nowline::before{
-  content:''; position:absolute; left:-3px; top:-4px; width:7px; height:7px;
-  border-radius:50%; background:var(--pink);
-}
+.nowline{position:absolute; left:0; right:0; height:0; border-top:1.5px solid var(--pink); pointer-events:none; z-index:5;}
+.nowline::before{content:''; position:absolute; left:-3px; top:-4px; width:7px; height:7px; border-radius:50%; background:var(--pink);}
 
 /* minimoバー（通常表示） */
 .mbar{position:absolute; left:0; width:26px; z-index:6; touch-action:manipulation;}
-.mbar-line{
-  position:absolute; left:8px; top:1px; bottom:1px; width:9px;
-  background:var(--pink); border-radius:5px; box-shadow:0 1px 2px rgba(244,63,94,.35);
-}
+.mbar-line{position:absolute; left:8px; top:1px; bottom:1px; width:9px; background:var(--pink); border-radius:5px; box-shadow:0 1px 2px rgba(244,63,94,.35);}
 .mbar:active .mbar-line{filter:brightness(.92);}
 
 /* 予約カード */
@@ -244,14 +202,12 @@ body.editing .frame{padding-bottom:150px;}
 .ghost.tiny .gname{display:none;}
 .glabel{
   position:absolute; right:6px; font-size:11px; font-weight:700; color:var(--pink);
-  background:rgba(255,255,255,.9); border-radius:5px; padding:0 5px;
-  font-variant-numeric:tabular-nums;
+  background:rgba(255,255,255,.9); border-radius:5px; padding:0 5px; font-variant-numeric:tabular-nums;
 }
 .glabel.top{top:3px;} .glabel.bot{bottom:3px;}
 .handle{
   position:absolute; left:50%; transform:translateX(-50%);
-  width:64px; height:34px; display:flex; align-items:center; justify-content:center;
-  touch-action:none;
+  width:64px; height:34px; display:flex; align-items:center; justify-content:center; touch-action:none;
 }
 .handle.top{top:-17px;} .handle.bot{bottom:-17px;}
 .handle span{
@@ -259,14 +215,11 @@ body.editing .frame{padding-bottom:150px;}
   border-radius:9px; box-shadow:0 1px 4px rgba(0,0,0,.18);
   display:flex; align-items:center; justify-content:center;
 }
-.handle i{
-  width:16px; height:2px; background:var(--pink); border-radius:2px; display:block;
-  transform:translateY(-2px); box-shadow:0 4px 0 var(--pink);
-}
-.ghost.conflict{border-color:var(--danger); background:var(--danger-soft);}
-.ghost.conflict .glabel, .ghost.conflict .gname{color:var(--danger); border-color:rgba(220,38,38,.4);}
-.ghost.conflict .handle span{border-color:var(--danger);}
-.ghost.conflict .handle i{background:var(--danger); box-shadow:0 4px 0 var(--danger);}
+.handle i{width:16px; height:2px; background:var(--pink); border-radius:2px; display:block; transform:translateY(-2px); box-shadow:0 4px 0 var(--pink);}
+.ghost.conflict{border-color:var(--danger2); background:var(--danger2-soft);}
+.ghost.conflict .glabel, .ghost.conflict .gname{color:var(--danger2); border-color:rgba(220,38,38,.4);}
+.ghost.conflict .handle span{border-color:var(--danger2);}
+.ghost.conflict .handle i{background:var(--danger2); box-shadow:0 4px 0 var(--danger2);}
 
 /* ---------- 編集バー ---------- */
 .editbar{
@@ -282,123 +235,75 @@ body.editing .frame{padding-bottom:150px;}
 .eb-dot{width:10px; height:10px; border-radius:3px; background:var(--pink); flex:0 0 auto;}
 .eb-title{font-size:12px; color:var(--mut);}
 .eb-time{font-size:17px; font-weight:700; font-variant-numeric:tabular-nums;}
-.eb-warn{
-  margin-top:8px; font-size:12px; font-weight:600; color:var(--danger);
-  background:var(--danger-soft); border-radius:8px; padding:6px 10px;
-}
+.eb-warn{margin-top:8px; font-size:12px; font-weight:600; color:var(--danger2); background:var(--danger2-soft); border-radius:8px; padding:6px 10px;}
 .eb-actions{display:flex; gap:8px; margin-top:10px;}
-.btn{
-  height:44px; border-radius:10px; font-size:14px; font-weight:600;
-  display:flex; align-items:center; justify-content:center;
-}
-.btn.outline{flex:1; border:1px solid var(--line); background:#fff; color:var(--ink);}
-.btn.outline.danger{color:var(--danger); border-color:rgba(220,38,38,.45);}
-.btn.solid{flex:1.4; background:var(--teal); color:#fff;}
-.btn.solid:disabled{background:#B9C4C1; cursor:not-allowed;}
+.eb-actions .btn{height:44px; font-size:14px;}
+.eb-actions .btn.outline{flex:1; border:1px solid var(--line); background:#fff; color:var(--ink);}
+.eb-actions .btn.outline.danger{color:var(--danger2); border-color:rgba(220,38,38,.45);}
+.eb-actions .btn.solid{flex:1.4;}
 
-/* ---------- トースト ---------- */
-.toast{
-  position:fixed; left:50%; bottom:24px; transform:translate(-50%,20px);
-  max-width:86%; background:var(--teal); color:#fff; font-size:13px;
-  padding:10px 16px; border-radius:10px; box-shadow:0 6px 18px rgba(0,0,0,.25);
-  opacity:0; pointer-events:none; transition:.2s; z-index:80; text-align:center;
-}
-.toast.show{opacity:1; transform:translate(-50%,0);}
 body.editing .toast{bottom:150px;}
-
 .footnote{padding:14px; font-size:11px; color:var(--mut); text-align:center;}
 </style>
 </head>
 <body>
 <div class="frame">
 
-  <!-- アプリバー -->
   <header class="appbar">
-    <button class="iconbtn plain" aria-label="メニュー">
-      <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
-    </button>
+    <button class="iconbtn plain" aria-label="メニュー"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
     <select aria-label="ブランド"><option>si'se</option></select>
     <select aria-label="エリア"><option>東京都</option></select>
     <div class="avatar">ro</div>
-    <button class="iconbtn" aria-label="運営管理">
-      <svg viewBox="0 0 24 24"><path d="M4 21V5l8-2v18M12 21h8V9l-8-2M7 9h1M7 13h1M7 17h1M16 12h1M16 16h1"/></svg>
-    </button>
-    <button class="iconbtn gold" aria-label="ログアウト">
-      <svg viewBox="0 0 24 24"><path d="M14 4h-8v16h8M10 12h10M17 8l3.5 4-3.5 4"/></svg>
-    </button>
+    <button class="iconbtn" aria-label="運営管理"><svg viewBox="0 0 24 24"><path d="M4 21V5l8-2v18M12 21h8V9l-8-2M7 9h1M7 13h1M7 17h1M16 12h1M16 16h1"/></svg></button>
+    <button class="iconbtn gold" aria-label="ログアウト"><svg viewBox="0 0 24 24"><path d="M14 4h-8v16h8M10 12h10M17 8l3.5 4-3.5 4"/></svg></button>
   </header>
 
-  <!-- タイトル -->
   <div class="titlebar">
-    <div class="titleicon">
-      <svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/></svg>
-    </div>
+    <div class="titleicon"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/></svg></div>
     <h1>予約管理</h1>
-    <label class="toggle">
-      <span class="switch"><input type="checkbox" id="tglShort"><i></i></span>
-      短縮表示
-    </label>
+    <label class="toggle"><span class="switch"><input type="checkbox" id="tglShort"><i></i></span>短縮表示</label>
   </div>
 
-  <!-- 日付ナビ -->
   <div class="datebar">
     <button class="navbtn" aria-label="前日">&#x2039;</button>
     <button class="navbtn">今日</button>
     <button class="navbtn" aria-label="翌日">&#x203A;</button>
-    <span class="date">2026年8月20日(木)</span><span class="caret">&#x25BE;</span>
+    <span class="date" id="theDate">—</span><span class="caret">&#x25BE;</span>
   </div>
   <div class="lastsync" id="lastSync">最終同期 8/19 10:00</div>
 
-  <!-- 操作列 -->
   <div class="controlbar">
-    <button class="ctl" id="btnRefresh" aria-label="更新">
-      <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7M20 4v4h-4"/></svg>
-    </button>
+    <button class="ctl" id="btnRefresh" aria-label="更新"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7M20 4v4h-4"/></svg></button>
     <button class="ctl" id="btnSync">
       <svg viewBox="0 0 24 24"><path d="M7 9l-3 3 3 3M17 9l3 3-3 3M4 12h16"/></svg>
-      同期
-      <span class="badge" id="syncBadge" hidden>0</span>
+      同期<span class="badge" id="syncBadge" hidden>0</span>
     </button>
-    <button class="ctl" id="btnChart" aria-label="集計">
-      <svg viewBox="0 0 24 24"><path d="M5 20V10M12 20V4M19 20v-7"/></svg>
-    </button>
+    <button class="ctl" id="btnChart" aria-label="集計"><svg viewBox="0 0 24 24"><path d="M5 20V10M12 20V4M19 20v-7"/></svg></button>
     <div class="seg" role="tablist">
       <button class="on">日</button><button id="segW">週</button><button id="segM">月</button>
     </div>
   </div>
-  <button class="createbtn" id="btnCreate">
-    <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-    予約作成
-  </button>
+  <button class="createbtn" id="btnCreate"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>予約作成</button>
 
-  <!-- 操作ヒント -->
   <div class="hint" id="hint">
     <div><b>ピンクのバー＝minimo連携枠</b>。タップで編集、空き時間を<b>長押し</b>で新規作成できます。</div>
     <button class="close" id="hintClose" aria-label="閉じる">&#x2715;</button>
   </div>
 
-  <!-- スタッフヘッダー（sticky） -->
-  <div class="staffhead" id="staffhead">
-    <div class="sh-gutter"></div>
-  </div>
+  <div class="staffhead" id="staffhead"><div class="sh-gutter"></div></div>
 
-  <!-- タイムグリッド -->
   <div class="board">
     <div class="gutter" id="gutter"></div>
     <div class="cols" id="cols"></div>
   </div>
 
-  <div class="footnote">モック v0.1 ／ 実装メモはソース冒頭コメントと claude_code_handoff.md 参照</div>
+  <div class="footnote">モック ／ 実装メモはソース冒頭コメントと claude_code_handoff.md 参照</div>
 </div>
 
-<!-- 編集バー -->
 <div class="editbar" id="editbar" aria-hidden="true">
   <div class="eb-info">
     <span class="eb-dot"></span>
-    <div>
-      <div class="eb-title">minimo連携枠</div>
-      <div class="eb-time" id="ebTime">--:-- – --:--</div>
-    </div>
+    <div><div class="eb-title">minimo連携枠</div><div class="eb-time" id="ebTime">--:-- – --:--</div></div>
   </div>
   <div class="eb-warn" id="ebWarn" hidden>予約・他のminimo枠と重なっています。位置を調整してください。</div>
   <div class="eb-actions">
@@ -410,8 +315,12 @@ body.editing .toast{bottom:150px;}
 
 <div class="toast" id="toast" role="status"></div>
 
+<script src="../assets/attendance.js"></script>
+<script src="../assets/mockdata.js"></script>
 <script>
 'use strict';
+const A = window.Attendance, M = window.MockData;
+
 /* ================= 定数 ================= */
 const DAY_START = 9 * 60;    // 9:00
 const DAY_END   = 19 * 60;   // 19:00
@@ -424,27 +333,14 @@ const y     = m  => TOP + (m - DAY_START) * ppm();
 const spanH = () => (DAY_END - DAY_START) * ppm() + TOP * 2;
 const snap  = m  => Math.round(m / SNAP) * SNAP;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-const pad   = n  => String(n).padStart(2, '0');
-const fmt   = m  => Math.floor(m / 60) + ':' + pad(m % 60);
-const fmtDur = m => {
-  const h = Math.floor(m / 60), mm = m % 60;
-  return h ? (mm ? h + '時間' + mm + '分' : h + '時間') : mm + '分';
-};
+const fmt   = m  => Math.floor(m / 60) + ':' + A.pad(m % 60);
+const fmtDur = m => { const h = Math.floor(m / 60), mm = m % 60;
+  return h ? (mm ? h + '時間' + mm + '分' : h + '時間') : mm + '分'; };
 
 /* ================= データ ================= */
-const staffList = [
-  { id: 'miura', name: '三浦 和真', shiftLabel: '00:00–00:00' },
-  { id: 'sato',  name: '佐藤 享哉', shiftLabel: '10:00–19:00' },
-];
-let slots = [
-  { id: 'm1', staff: 'miura', start: 600, end: 840 },  // 10:00–14:00
-  { id: 's1', staff: 'sato',  start: 600, end: 720 },  // 10:00–12:00
-  { id: 's2', staff: 'sato',  start: 810, end: 960 },  // 13:30–16:00
-];
-const reservations = [
-  { id: 'r1', staff: 'sato', start: 720, end: 795,
-    name: '小野 未央子', code: '#262', tag: '会員', src: 'H' },
-];
+const staffList    = M.SCHEDULE_STAFF;
+let   slots        = M.minimoSlots();
+const reservations = M.reservations();
 let nextId = 1;
 let dirty  = 0;      // 未同期の変更数
 
@@ -453,15 +349,19 @@ let edit = null;     // {slotId, staff, start, end, isNew}
 let drag = null;     // {mode, y0, s0, e0}
 let lp   = null;     // 長押し {timer, x, y, staff, rectTop}
 
-/* ================= DOM ================= */
-const colsEl    = document.getElementById('cols');
-const gutterEl  = document.getElementById('gutter');
-const staffhead = document.getElementById('staffhead');
-const editbar   = document.getElementById('editbar');
-const ebTime    = document.getElementById('ebTime');
-const ebWarn    = document.getElementById('ebWarn');
-const btnSave   = document.getElementById('btnSave');
-const btnDelete = document.getElementById('btnDelete');
+const $ = id => document.getElementById(id);
+const colsEl    = $('cols');
+const gutterEl  = $('gutter');
+const staffhead = $('staffhead');
+const editbar   = $('editbar');
+const ebTime    = $('ebTime');
+const ebWarn    = $('ebWarn');
+const btnSave   = $('btnSave');
+const btnDelete = $('btnDelete');
+
+(function(){ const d = new Date();
+  $('theDate').textContent = d.getFullYear() + '年' + (d.getMonth()+1) + '月' + d.getDate() + '日(' + A.DOW[d.getDay()] + ')';
+})();
 
 /* ================= 構築 ================= */
 function buildHead(){
@@ -469,10 +369,9 @@ function buildHead(){
   staffList.forEach(st => {
     const c = document.createElement('div');
     c.className = 'sh-cell';
-    c.innerHTML =
-      '<div class="nm">' + st.name + '</div>' +
-      '<div class="sf">' + st.shiftLabel + '</div>' +
-      '<div class="mtag">minimo連携枠</div>';
+    c.innerHTML = '<div class="nm">' + st.name + '</div>' +
+                  '<div class="sf">' + st.shiftLabel + '</div>' +
+                  '<div class="mtag">minimo連携枠</div>';
     staffhead.appendChild(c);
   });
 }
@@ -480,23 +379,18 @@ function buildHead(){
 function build(){
   const H = spanH();
 
-  // 時刻ラベル
   gutterEl.style.height = H + 'px';
   gutterEl.innerHTML = '';
   for(let m = DAY_START; m <= DAY_END; m += 60){
     const d = document.createElement('div');
-    d.className = 'hlabel';
-    d.style.top = y(m) + 'px';
-    d.textContent = fmt(m);
+    d.className = 'hlabel'; d.style.top = y(m) + 'px'; d.textContent = fmt(m);
     gutterEl.appendChild(d);
   }
 
-  // 列＋グリッド線
   colsEl.innerHTML = '';
   colsEl.style.height = H + 'px';
   const gl = document.createElement('div');
-  gl.className = 'gridlines';
-  gl.style.height = H + 'px';
+  gl.className = 'gridlines'; gl.style.height = H + 'px';
   for(let m = DAY_START; m <= DAY_END; m += SNAP){
     const l = document.createElement('div');
     l.className = (m % 60 === 0) ? 'gl' : 'gl quarter';
@@ -507,9 +401,7 @@ function build(){
 
   staffList.forEach(st => {
     const c = document.createElement('div');
-    c.className = 'col';
-    c.dataset.staff = st.id;
-    c.style.height = H + 'px';
+    c.className = 'col'; c.dataset.staff = st.id; c.style.height = H + 'px';
     const items = document.createElement('div');
     items.className = 'items';
     c.appendChild(items);
@@ -517,8 +409,7 @@ function build(){
   });
 
   const nl = document.createElement('div');
-  nl.className = 'nowline';
-  nl.id = 'nowline';
+  nl.className = 'nowline'; nl.id = 'nowline';
   colsEl.appendChild(nl);
 
   renderItems();
@@ -531,12 +422,10 @@ function renderItems(){
     const items = colsEl.querySelector('.col[data-staff="' + st.id + '"] .items');
     if(!items) return;
     items.innerHTML = '';
-    slots
-      .filter(s => s.staff === st.id && !(edit && !edit.isNew && edit.slotId === s.id))
-      .forEach(s => items.appendChild(makeBar(s)));
-    reservations
-      .filter(r => r.staff === st.id)
-      .forEach(r => items.appendChild(makeRes(r)));
+    slots.filter(s => s.staff === st.id && !(edit && !edit.isNew && edit.slotId === s.id))
+         .forEach(s => items.appendChild(makeBar(s)));
+    reservations.filter(r => r.staff === st.id)
+                .forEach(r => items.appendChild(makeRes(r)));
     if(edit && edit.staff === st.id) items.appendChild(makeGhost());
   });
   if(edit) refreshGhost();
@@ -561,8 +450,7 @@ function makeRes(r){
   d.className = 'res';
   d.style.top = y(r.start) + 'px';
   d.style.height = ((r.end - r.start) * ppm() - 2) + 'px';
-  d.innerHTML =
-    '<div class="nm">' + r.name + '</div>' +
+  d.innerHTML = '<div class="nm">' + r.name + '</div>' +
     '<div class="chips"><span class="chip code">' + r.code + '</span>' +
     '<span class="chip member">' + r.tag + '</span></div>' +
     '<span class="src">' + r.src + '</span>';
@@ -573,8 +461,7 @@ function makeRes(r){
 
 function makeGhost(){
   const g = document.createElement('div');
-  g.className = 'ghost';
-  g.id = 'ghost';
+  g.className = 'ghost'; g.id = 'ghost';
   g.innerHTML =
     '<span class="gname">minimo連携枠</span>' +
     '<span class="glabel top" id="glabelTop"></span>' +
@@ -589,14 +476,14 @@ function makeGhost(){
 }
 
 function refreshGhost(){
-  const g = document.getElementById('ghost');
+  const g = $('ghost');
   if(!g || !edit) return;
   const h = (edit.end - edit.start) * ppm();
   g.style.top = y(edit.start) + 'px';
   g.style.height = h + 'px';
   g.classList.toggle('tiny', h < 46);
-  document.getElementById('glabelTop').textContent = fmt(edit.start);
-  document.getElementById('glabelBot').textContent = fmt(edit.end);
+  $('glabelTop').textContent = fmt(edit.start);
+  $('glabelBot').textContent = fmt(edit.end);
   const conf = hasConflict();
   g.classList.toggle('conflict', conf);
   ebTime.textContent = fmt(edit.start) + ' – ' + fmt(edit.end) + '（' + fmtDur(edit.end - edit.start) + '）';
@@ -604,10 +491,11 @@ function refreshGhost(){
   btnSave.disabled = conf;
 }
 
-/* ================= ドラッグ ================= */
+/* ================= ドラッグ =================
+   ドラッグ中は state を更新して style を直接書き換える。
+   React移植時も、この区間だけは setState を挟まずに ref + style 直更新にすること。 */
 function onGhostDown(e){
-  e.preventDefault();
-  e.stopPropagation();
+  e.preventDefault(); e.stopPropagation();
   const h = e.target.closest('.handle');
   drag = { mode: h ? h.dataset.h : 'move', y0: e.clientY, s0: edit.start, e0: edit.end };
   e.currentTarget.setPointerCapture(e.pointerId);
@@ -629,6 +517,7 @@ function onGhostMove(e){
 }
 function onGhostUp(){ drag = null; }
 
+/** 同一スタッフの予約・他のminimo枠と重ならないこと */
 function hasConflict(){
   if(!edit) return false;
   const s = edit.start, en = edit.end;
@@ -670,7 +559,7 @@ btnSave.addEventListener('click', () => {
   exitEdit();
   toast('minimo枠を保存しました（' + range + '・同期待ち）');
 });
-document.getElementById('btnCancel').addEventListener('click', exitEdit);
+$('btnCancel').addEventListener('click', exitEdit);
 btnDelete.addEventListener('click', () => {
   if(!edit || edit.isNew){ exitEdit(); return; }
   slots = slots.filter(o => o.id !== edit.slotId);
@@ -701,42 +590,38 @@ colsEl.addEventListener('pointerdown', e => {
   colsEl.addEventListener(ev, e => {
     if(!lp) return;
     if(ev !== 'pointermove' || Math.abs(e.clientX - lp.x) > 8 || Math.abs(e.clientY - lp.y) > 8){
-      clearTimeout(lp.timer);
-      lp = null;
+      clearTimeout(lp.timer); lp = null;
     }
   });
 });
 
 /* ================= 同期・その他UI ================= */
 function updateSyncBadge(){
-  const b = document.getElementById('syncBadge');
+  const b = $('syncBadge');
   b.hidden = dirty === 0;
   b.textContent = dirty;
 }
-document.getElementById('btnSync').addEventListener('click', () => {
+$('btnSync').addEventListener('click', () => {
   if(dirty){
     toast(dirty + '件の変更をminimoへ同期しました（モック）');
     dirty = 0;
     updateSyncBadge();
-    document.getElementById('lastSync').textContent = '最終同期 たった今';
+    $('lastSync').textContent = '最終同期 たった今';
   }else{
     toast('同期しました（変更なし）');
   }
 });
-document.getElementById('btnRefresh').addEventListener('click', () => toast('最新の状態に更新しました（モック）'));
-document.getElementById('btnChart').addEventListener('click', () => toast('集計はこのモックの対象外です'));
-document.getElementById('btnCreate').addEventListener('click', () => toast('予約作成はこのモックの対象外です'));
-document.getElementById('segW').addEventListener('click', () => toast('モックでは「日」表示のみ対応しています'));
-document.getElementById('segM').addEventListener('click', () => toast('モックでは「日」表示のみ対応しています'));
-document.getElementById('hintClose').addEventListener('click', () => document.getElementById('hint').remove());
-document.getElementById('tglShort').addEventListener('change', e => {
-  PX15 = e.target.checked ? 16 : 26;
-  build();
-});
+$('btnRefresh').addEventListener('click', () => toast('最新の状態に更新しました（モック）'));
+$('btnChart').addEventListener('click',   () => toast('集計はこのモックの対象外です'));
+$('btnCreate').addEventListener('click',  () => toast('予約作成はこのモックの対象外です'));
+$('segW').addEventListener('click', () => toast('モックでは「日」表示のみ対応しています'));
+$('segM').addEventListener('click', () => toast('モックでは「日」表示のみ対応しています'));
+$('hintClose').addEventListener('click', () => $('hint').remove());
+$('tglShort').addEventListener('change', e => { PX15 = e.target.checked ? 16 : 26; build(); });
 
 /* ================= 現在時刻ライン ================= */
 function updateNow(){
-  const nl = document.getElementById('nowline');
+  const nl = $('nowline');
   if(!nl) return;
   const d = new Date();
   const m = d.getHours() * 60 + d.getMinutes();
@@ -749,14 +634,13 @@ setInterval(updateNow, 30000);
 /* ================= トースト ================= */
 let toastT;
 function toast(msg){
-  const t = document.getElementById('toast');
+  const t = $('toast');
   t.textContent = msg;
   t.classList.add('show');
   clearTimeout(toastT);
   toastT = setTimeout(() => t.classList.remove('show'), 2600);
 }
 
-/* ================= 初期化 ================= */
 buildHead();
 build();
 </script>

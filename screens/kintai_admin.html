@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SalonOne｜勤怠管理（管理者）</title>
+<!--
+================================================================================
+[勤怠管理] 管理者が月次の打刻実績を確認・修正・承認する  → 移植先: /time-tracking
+================================================================================
+■ 現行実装のバグと、この画面での対処（handoffメモ §3-1）
+  ① 時間表記が小数のまま（合計 8h43.7166666666667m）
+     → 表示は必ず assets/attendance.js の fmtHM()/fmtJa() を通す。
+        ダミーデータの brk は float のまま置いてあり、丸められているかの回帰確認になる。
+        本命の対処はAPI側で整数分に丸めること。
+  ② 退勤未打刻の行が「—」で終わり気づけない
+     → 行を赤地＋「退勤未打刻」バッジ、画面上部にアラート集約、そこから絞り込み。
+  ③ スタッフ絞り込みがない
+     → 月／スタッフ／状態の3フィルタ＋スタッフ単位の小計。
+  ④ 打刻を修正できない
+     → 行から修正モーダル。理由必須で、履歴に残す前提。
+  ⑤ スマホで横スクロールになる
+     → 768px未満はテーブルを捨ててカードへ切替（CSSのみ）。
+
+■ 集計ルール
+  実働 = 退勤 − 出勤 − 休憩合計
+  残業 = max(0, 実働 − 所定労働時間(既定480分))
+  打刻漏れの日は実働 null。0分として合計に混ぜない（件数だけ数える）。
+  深夜割増・法定休日割増は未計算（メモ §5-8）。
+
+■ API
+  GET   /api/attendance?month=YYYY-MM&staff_id=   月次一覧（整数分で返す）
+  PATCH /api/attendance/:staffId/:date            打刻修正（reason必須）
+  POST  /api/attendance/approve                   月次承認
+  GET   /api/attendance/export?month=YYYY-MM      CSV
+================================================================================
+-->
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/base.css">
+<style>
+.shell{display:flex; min-height:100vh; align-items:stretch;}
+
+/* ---------- サイドバー（PCのみ） ---------- */
+.sidebar{
+  width:212px; flex:0 0 auto; background:var(--teal); color:#fff;
+  padding:16px 0; display:flex; flex-direction:column;
+}
+.sidebar .logo{
+  font-family:"Playfair Display",Georgia,serif; font-size:19px;
+  letter-spacing:.04em; padding:2px 18px 16px;
+}
+.sidebar .logo b{color:var(--gold);}
+.sidebar nav{display:flex; flex-direction:column; gap:1px;}
+.sidebar a{
+  color:rgba(255,255,255,.78); text-decoration:none; font-size:13.5px;
+  padding:10px 18px; display:flex; align-items:center; gap:9px;
+}
+.sidebar a:hover{background:rgba(255,255,255,.06); color:#fff;}
+.sidebar a.on{background:rgba(255,255,255,.10); color:#fff; font-weight:700; box-shadow:3px 0 0 var(--gold) inset;}
+.sidebar .foot{margin-top:auto; padding:14px 18px 2px; font-size:11.5px; color:rgba(255,255,255,.6); line-height:1.5;}
+
+/* ---------- 本体 ---------- */
+.main{flex:1; min-width:0; display:flex; flex-direction:column;}
+.mobbar{display:none; background:var(--teal); color:#fff; padding:12px 16px; align-items:center; gap:10px;}
+.mobbar .logo{font-family:"Playfair Display",Georgia,serif; font-size:17px;}
+.mobbar .logo b{color:var(--gold);}
+.mobbar .who{margin-left:auto; font-size:11.5px; opacity:.85; text-align:right; line-height:1.4;}
+
+.content{padding:18px; max-width:1180px; width:100%;}
+.pagehead{display:flex; align-items:flex-end; gap:12px; margin-bottom:14px; flex-wrap:wrap;}
+.pagehead h1{margin:0; font-size:21px; letter-spacing:.02em;}
+.pagehead .sub{font-size:12.5px; color:var(--mut); padding-bottom:3px;}
+
+.filters{display:flex; flex-wrap:wrap; gap:10px; align-items:center;}
+.filters select{height:40px; border:1px solid var(--line); border-radius:10px; background:#fff; padding:0 10px;}
+.filters .spacer{margin-left:auto;}
+
+/* ---------- KPI ---------- */
+.kpis{display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin-bottom:14px;}
+.kpi{background:var(--paper); border:1px solid var(--line); border-radius:var(--r); padding:12px 14px;}
+.kpi .l{font-size:11.5px; color:var(--mut);}
+.kpi .v{font-size:22px; font-weight:700; letter-spacing:.01em; margin-top:2px;}
+.kpi .v small{font-size:12px; font-weight:600; color:var(--mut); margin-left:2px;}
+.kpi.alert{border-color:rgba(196,52,43,.35);}
+.kpi.alert .v{color:var(--danger);}
+
+/* ---------- スタッフ別ブロック ---------- */
+.staffblock{background:var(--paper); border:1px solid var(--line); border-radius:var(--r); margin-bottom:14px; overflow:hidden;}
+.sbhead{
+  display:flex; align-items:center; gap:12px; padding:12px 16px;
+  background:var(--muted-bg); border-bottom:1px solid var(--line); flex-wrap:wrap;
+}
+.sbhead .nm{font-weight:700; font-size:15px;}
+.sbhead .st{font-size:12px; color:var(--mut);}
+.sbhead .tot{margin-left:auto; font-size:12.5px; color:var(--mut); white-space:nowrap;}
+.sbhead .tot b{font-size:15px; color:var(--ink);}
+.sbhead .ap{font-size:11px; font-weight:700; border-radius:999px; padding:3px 10px; background:var(--ok-soft); color:var(--ok);}
+
+table{width:100%; border-collapse:collapse;}
+thead th{
+  font-size:11.5px; color:var(--mut); font-weight:600; text-align:center;
+  padding:9px 8px; border-bottom:1px solid var(--line); background:#FAFAF6;
+}
+thead th.l{text-align:left;}
+tbody td{padding:11px 8px; border-bottom:1px solid var(--line); text-align:center; font-size:13.5px;}
+tbody td.l{text-align:left;}
+tbody tr:last-child td{border-bottom:none;}
+tbody tr.miss{background:var(--danger-soft);}
+.dow{color:var(--mut); font-size:12px; margin-left:3px;}
+.dow.sat{color:#2F6DA8;} .dow.sun{color:#C4342B;}
+.fixbtn{font-size:12px; color:var(--teal-3); text-decoration:underline; font-weight:600;}
+
+/* ---------- スマホ：カード表示 ---------- */
+.mobcards{display:none;}
+@media (max-width:1024px){
+  .sidebar{display:none;}
+  .mobbar{display:flex;}
+}
+@media (max-width:768px){
+  .content{padding:12px;}
+  .pagehead h1{font-size:19px;}
+  .kpis{grid-template-columns:repeat(2,1fr);}
+  .kpi:first-child{grid-column:span 2;}
+  .filters select{flex:1; min-width:calc(50% - 5px);}
+  .filters .spacer{margin-left:0; width:100%; height:0;}
+  .filters .btn{flex:1;}
+  table.daytable{display:none;}
+  .mobcards{display:block; padding:8px 12px 12px;}
+  .mrow{border:1px solid var(--line); border-radius:11px; padding:10px 12px; margin-top:8px;}
+  .mrow.miss{border-color:rgba(196,52,43,.45); background:var(--danger-soft);}
+  .mrow .r1{display:flex; align-items:center; gap:8px;}
+  .mrow .dt{font-weight:700;}
+  .mrow .r1 .right{margin-left:auto; font-weight:700;}
+  .mrow .r2{display:flex; gap:14px; margin-top:6px; font-size:12.5px; color:var(--mut); flex-wrap:wrap;}
+  .mrow .r3{display:flex; align-items:center; gap:6px; margin-top:8px; flex-wrap:wrap;}
+  .sbhead .tot{margin-left:0; width:100%;}
+}
+</style>
+</head>
+<body>
+
+<div class="shell">
+  <aside class="sidebar">
+    <div class="logo">Salon<b>One</b></div>
+    <nav>
+      <a href="#">予約管理</a>
+      <a href="#">顧客管理</a>
+      <a href="#">スタッフ</a>
+      <a href="#" class="on">勤怠管理</a>
+      <a href="#">売上</a>
+      <a href="#">設定</a>
+    </nav>
+    <div class="foot" id="sideFoot"></div>
+  </aside>
+
+  <div class="main">
+    <div class="mobbar">
+      <div class="logo">Salon<b>One</b></div>
+      <div class="who" id="mobWho"></div>
+    </div>
+
+    <div class="content">
+      <div class="pagehead">
+        <h1>勤怠管理</h1>
+        <span class="sub">月次の打刻実績を確認・修正します</span>
+      </div>
+
+      <div class="card">
+        <div class="filters">
+          <select id="fMonth" aria-label="月">
+            <option value="2026-08" selected>2026年8月</option>
+            <option value="2026-07">2026年7月</option>
+          </select>
+          <select id="fStaff" aria-label="スタッフ"></select>
+          <select id="fStatus" aria-label="状態">
+            <option value="all">すべての状態</option>
+            <option value="miss">打刻漏れのみ</option>
+            <option value="edited">修正済みのみ</option>
+          </select>
+          <span class="spacer"></span>
+          <button class="btn ghost" id="btnCsv">CSV出力</button>
+          <button class="btn solid" id="btnApprove">この月を承認</button>
+        </div>
+      </div>
+
+      <div class="kpis" id="kpis"></div>
+      <div id="alerts"></div>
+      <div id="list"></div>
+      <p class="note">所定労働時間は 8時間0分／日として残業を算出しています（設定値・要確認）。</p>
+    </div>
+  </div>
+</div>
+
+<!-- 打刻修正モーダル -->
+<div class="mask" id="mask">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+    <h3 id="mTitle">打刻を修正</h3>
+    <div class="mdate" id="mDate">—</div>
+    <div class="mgrid">
+      <div class="mfield"><label for="mIn">出勤</label><input type="time" id="mIn" step="60"></div>
+      <div class="mfield"><label for="mOut">退勤</label><input type="time" id="mOut" step="60"></div>
+    </div>
+    <div class="mfield"><label for="mBreak">休憩（分）</label><input type="number" id="mBreak" min="0" max="480" step="5"></div>
+    <div class="calcline"><span>実働時間</span><b id="mCalc">—</b></div>
+    <div class="mfield">
+      <label for="mReason">修正理由（必須・履歴に残ります）</label>
+      <textarea id="mReason" placeholder="例：退勤打刻を忘れたため、シフト終了時刻で登録"></textarea>
+    </div>
+    <div class="err" id="mErr"></div>
+    <div class="mactions">
+      <button class="btn ghost" id="mCancel">キャンセル</button>
+      <button class="btn solid" id="mSave">保存する</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script src="../assets/attendance.js"></script>
+<script src="../assets/mockdata.js"></script>
+<script>
+'use strict';
+const A = window.Attendance, M = window.MockData;
+const $ = id => document.getElementById(id);
+
+let days = M.attendanceDays();
+let approved = false;
+
+$('sideFoot').innerHTML = M.SHOP.name + '<br>システム運用（ROOT）';
+$('mobWho').innerHTML   = M.SHOP.name + '<br>システム運用（ROOT）';
+
+/* スタッフ絞り込み（現行の課題③） */
+const fs = $('fStaff');
+fs.innerHTML = '<option value="all">全スタッフ</option>';
+M.STAFF_ORDER.forEach(id => {
+  const o = document.createElement('option');
+  o.value = id; o.textContent = M.STAFF[id].name;
+  fs.appendChild(o);
+});
+
+/* ---------------- 絞り込み ---------------- */
+function filtered(){
+  const staff = $('fStaff').value, status = $('fStatus').value, month = $('fMonth').value;
+  return days.filter(d => {
+    if(!d.date.startsWith(month)) return false;
+    if(staff !== 'all' && d.staff !== staff) return false;
+    if(status === 'miss'   && d.out != null) return false;
+    if(status === 'edited' && !d.edited)     return false;
+    return true;
+  });
+}
+
+/* ---------------- 描画 ---------------- */
+function render(){
+  const rows = filtered();
+  const s = A.summarize(rows);
+
+  $('kpis').innerHTML =
+    kpi('総勤務時間', A.fmtJa(s.work)) +
+    kpi('出勤日数',  s.days + '<small>日</small>') +
+    kpi('休憩合計',  A.fmtJa(s.brk)) +
+    kpi('残業合計',  A.fmtJa(s.overtime)) +
+    kpi('打刻漏れ',  s.missing + '<small>件</small>', s.missing > 0);
+
+  /* 打刻漏れアラート（現行の課題②） */
+  $('alerts').innerHTML = s.missing > 0
+    ? '<div class="alertbar"><b>退勤の打刻漏れが ' + s.missing + '件</b> あります。給与計算前に修正してください。' +
+      '<button class="go" id="goMiss">該当だけ表示</button></div>'
+    : '';
+  const gm = $('goMiss');
+  if(gm) gm.addEventListener('click', () => { $('fStatus').value = 'miss'; render(); });
+
+  const list = $('list');
+  list.innerHTML = '';
+
+  const byStaff = {};
+  rows.forEach(d => { (byStaff[d.staff] = byStaff[d.staff] || []).push(d); });
+  const keys = M.STAFF_ORDER.filter(id => byStaff[id]);
+
+  if(!keys.length){
+    list.innerHTML = '<div class="card"><div class="note" style="padding:12px 2px">条件に一致する勤怠データがありません。</div></div>';
+    return;
+  }
+
+  keys.forEach(sid => {
+    const items = byStaff[sid].slice().sort((a, b) => a.date.localeCompare(b.date));
+    const sub = A.summarize(items);   // スタッフ単位の小計
+
+    const block = document.createElement('div');
+    block.className = 'staffblock';
+    block.innerHTML =
+      '<div class="sbhead">' +
+        '<div><div class="nm">' + M.STAFF[sid].name + '</div>' +
+        '<div class="st">' + M.STAFF[sid].shop + ' ・ ' + items.length + '日出勤' +
+        (sub.missing ? ' ・ <span style="color:var(--danger)">打刻漏れ ' + sub.missing + '件</span>' : '') +
+        '</div></div>' +
+        '<div class="tot">合計実働 <b>' + A.fmtJa(sub.work) + '</b></div>' +
+        (approved ? '<span class="ap">承認済み</span>' : '') +
+      '</div>' +
+      '<table class="daytable"><thead><tr>' +
+        '<th class="l">日付</th><th>出勤</th><th>退勤</th><th>休憩</th><th>実働</th><th>状態</th><th></th>' +
+      '</tr></thead><tbody></tbody></table>' +
+      '<div class="mobcards"></div>';
+
+    const tb = block.querySelector('tbody');
+    const mc = block.querySelector('.mobcards');
+
+    items.forEach(d => {
+      const w    = A.calcWork(d.in, d.out, d.brk);
+      const miss = (w == null);
+      const ot   = A.calcOvertime(w);
+      const dt   = new Date(d.date + 'T00:00:00');
+      const di   = dt.getDay();
+      const dlabel = (dt.getMonth() + 1) + '/' + dt.getDate() +
+        '<span class="dow ' + (di === 0 ? 'sun' : di === 6 ? 'sat' : '') + '">(' + A.DOW[di] + ')</span>';
+
+      let tags = '';
+      if(miss)     tags += '<span class="tag miss">退勤未打刻</span> ';
+      if(d.edited) tags += '<span class="tag edited">修正済</span> ';
+      if(ot > 0)   tags += '<span class="tag ot">残業 ' + A.fmtJa(ot) + '</span>';
+      if(!tags)    tags  = '<span class="tag off">通常</span>';
+
+      const tr = document.createElement('tr');
+      if(miss) tr.className = 'miss';
+      tr.innerHTML =
+        '<td class="l">' + dlabel + '</td>' +
+        '<td class="mono">' + (d.in  != null ? A.toStr(d.in)  : '<span class="dash">—</span>') + '</td>' +
+        '<td class="mono">' + (d.out != null ? A.toStr(d.out) : '<span class="dash">—</span>') + '</td>' +
+        '<td class="mono">' + A.fmtHM(d.brk) + '</td>' +
+        '<td class="mono"><b>' + (w != null ? A.fmtHM(w) : '<span class="dash">—</span>') + '</b></td>' +
+        '<td>' + tags + '</td>' +
+        '<td><button class="fixbtn">修正</button></td>';
+      tr.querySelector('.fixbtn').addEventListener('click', () => openFix(d));
+      tb.appendChild(tr);
+
+      const card = document.createElement('div');
+      card.className = 'mrow' + (miss ? ' miss' : '');
+      card.innerHTML =
+        '<div class="r1"><span class="dt">' + dlabel + '</span>' +
+          '<span class="right mono">' + (w != null ? A.fmtJa(w) : '—') + '</span></div>' +
+        '<div class="r2">' +
+          '<span>出勤 <b class="mono">' + (d.in  != null ? A.toStr(d.in)  : '—') + '</b></span>' +
+          '<span>退勤 <b class="mono">' + (d.out != null ? A.toStr(d.out) : '—') + '</b></span>' +
+          '<span>休憩 <b class="mono">' + A.fmtHM(d.brk) + '</b></span>' +
+        '</div>' +
+        '<div class="r3">' + tags + '<span style="margin-left:auto"><button class="fixbtn">修正</button></span></div>';
+      card.querySelector('.fixbtn').addEventListener('click', () => openFix(d));
+      mc.appendChild(card);
+    });
+
+    list.appendChild(block);
+  });
+}
+
+function kpi(label, val, alert){
+  return '<div class="kpi' + (alert ? ' alert' : '') + '">' +
+         '<div class="l">' + label + '</div><div class="v tnum">' + val + '</div></div>';
+}
+
+['fMonth','fStaff','fStatus'].forEach(id => $(id).addEventListener('change', render));
+
+/* ---------------- 修正モーダル（現行の課題④） ---------------- */
+let target = null;
+
+function openFix(d){
+  target = d;
+  $('mDate').textContent =
+    M.STAFF[d.staff].name + ' ／ ' + d.date.replace(/-/g, '/') +
+    (d.edited ? '（修正履歴あり：' + d.reason + '）' : '');
+  $('mIn').value    = A.toStr(d.in);
+  $('mOut').value   = A.toStr(d.out);
+  $('mBreak').value = Math.round(d.brk || 0);   // 入力欄にも小数を出さない
+  $('mReason').value = '';
+  $('mErr').classList.remove('show');
+  recalc();
+  $('mask').classList.add('show');
+}
+function closeFix(){ $('mask').classList.remove('show'); target = null; }
+
+function recalc(){
+  const w = A.calcWork(A.toMin($('mIn').value), A.toMin($('mOut').value), Number($('mBreak').value || 0));
+  $('mCalc').textContent = (w != null ? A.fmtJa(w) : '退勤時刻を入力してください');
+}
+['mIn','mOut','mBreak'].forEach(id => $(id).addEventListener('input', recalc));
+
+$('mCancel').addEventListener('click', closeFix);
+$('mask').addEventListener('click', e => { if(e.target === $('mask')) closeFix(); });
+document.addEventListener('keydown', e => { if(e.key === 'Escape' && target) closeFix(); });
+
+$('mSave').addEventListener('click', () => {
+  if(!target) return;
+  const i = A.toMin($('mIn').value), o = A.toMin($('mOut').value);
+  const b = Number($('mBreak').value || 0);
+  const r = $('mReason').value.trim();
+  const err = $('mErr');
+  const ng = m => { err.textContent = m; err.classList.add('show'); };
+
+  if(i == null)                 return ng('出勤時刻を入力してください。');
+  if(o != null && o <= i)       return ng('退勤時刻は出勤時刻より後にしてください。');
+  if(o != null && (o - i) < b)  return ng('休憩時間が勤務時間を超えています。');
+  if(!r)                        return ng('修正理由を入力してください。');
+
+  target.in = i; target.out = o; target.brk = b;
+  target.edited = true; target.reason = r;
+  closeFix();
+  render();
+  toast('打刻を修正しました（履歴に記録されます）');
+});
+
+/* ---------------- 承認・CSV ---------------- */
+$('btnApprove').addEventListener('click', () => {
+  const miss = A.summarize(filtered()).missing;
+  if(miss > 0){ toast('打刻漏れが ' + miss + '件あります。先に修正してください。'); return; }
+  approved = true;
+  render();
+  toast('この月の勤怠を承認しました');
+});
+
+$('btnCsv').addEventListener('click', () => {
+  const rows = [['スタッフ','日付','出勤','退勤','休憩(分)','実働(分)','実働','状態','修正理由']];
+  filtered().slice()
+    .sort((a, b) => (a.staff + a.date).localeCompare(b.staff + b.date))
+    .forEach(d => {
+      const w = A.calcWork(d.in, d.out, d.brk);
+      rows.push([
+        M.STAFF[d.staff].name, d.date,
+        d.in  != null ? A.toStr(d.in)  : '',
+        d.out != null ? A.toStr(d.out) : '',
+        Math.round(d.brk || 0),                 // CSVにも小数を出さない
+        w != null ? Math.round(w) : '',
+        w != null ? A.fmtHM(w) : '',
+        w == null ? '退勤未打刻' : (d.edited ? '修正済' : '通常'),
+        d.reason || '',
+      ]);
+    });
+  const url = URL.createObjectURL(new Blob([A.toCsv(rows)], { type:'text/csv' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = '勤怠_' + $('fMonth').value + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('CSVを出力しました');
+});
+
+/* ---------------- トースト ---------------- */
+let toastT;
+function toast(msg){
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastT);
+  toastT = setTimeout(() => t.classList.remove('show'), 2600);
+}
+
+render();
+</script>
+</body>
+</html>

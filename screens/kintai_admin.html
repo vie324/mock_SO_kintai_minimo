@@ -30,6 +30,19 @@
   現行の列名は「勤務時間」。このモックでは拘束時間と紛れないよう「実働」にしている。
   どちらに揃えるかは要確認。
 
+■ 固定残業（みなし残業）
+  サロン・整体院は固定残業で回している店舗が多いため、月あたりの上限に対して
+  消化状況を出す。SHOP.fixedOvertimeMinutes（既定30時間）。
+    通常 … 上限内
+    注意 … 上限の80%以上（SHOP.overtimeAlertRatio）。超えそうなので先に手を打てる
+    超過 … 上限超え。超過分は別途支給が要るので給与計算前に必ず気づかせる
+  上限を 0 にすると固定残業なしの運用となり、この表示は出ない。
+  雇用形態ごと／スタッフごとに違う可能性が高く、設定単位は要確認（メモ §5-6と同じ論点）。
+
+■ 休憩機能のオン/オフ
+  休憩を管理しない店舗があるため店舗ごとの設定。SHOP.breakEnabled。
+  OFFのとき: 休憩列・休憩合計KPI・CSVの休憩列を出さず、実働 = 退勤 − 出勤 とする。
+
 ■ 集計ルール
   実働 = 退勤 − 出勤 − 休憩合計 ／ 残業 = max(0, 実働 − 所定労働時間(既定480分))
   打刻漏れの日は実働 null。0分として合計に混ぜず、件数だけ数える。
@@ -56,7 +69,7 @@
 .filters select{height:40px; border:1px solid var(--line); border-radius:10px; background:#fff; padding:0 10px;}
 .filters .spacer{margin-left:auto;}
 
-.kpis{display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin-bottom:14px;}
+.kpis{display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:14px;}
 .kpi{background:var(--paper); border:1px solid var(--line); border-radius:var(--r); padding:12px 14px;}
 .kpi .l{font-size:11.5px; color:var(--mut);}
 .kpi .v{font-size:22px; font-weight:700; letter-spacing:.01em; margin-top:2px;}
@@ -71,6 +84,26 @@
 .sbhead .tot{margin-left:auto; font-size:12.5px; color:var(--mut); white-space:nowrap;}
 .sbhead .tot b{font-size:15px; color:var(--ink);}
 .sbhead .ap{font-size:11px; font-weight:700; border-radius:999px; padding:3px 10px; background:var(--ok-soft); color:var(--ok);}
+
+/* 固定残業の消化状況 */
+.fixot{
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  padding:9px 16px; border-bottom:1px solid var(--line); background:#FCFCF8; font-size:12.5px;
+}
+.fixot .l{color:var(--mut); font-size:11.5px; white-space:nowrap;}
+.fixot .bar{
+  flex:1; min-width:120px; height:7px; border-radius:999px; background:#E7E7DF;
+  overflow:hidden; position:relative;
+}
+.fixot .bar i{display:block; height:100%; border-radius:999px; background:var(--ok); transition:width .2s;}
+.fixot .v{font-variant-numeric:tabular-nums; white-space:nowrap;}
+.fixot .v b{font-size:13.5px;}
+.fixot.warn .bar i{background:var(--warn);}
+.fixot.over .bar i{background:var(--danger);}
+.fixot.warn{background:var(--warn-soft);}
+.alertbar.warn{background:var(--warn-soft); border-color:rgba(180,116,11,.3); color:var(--warn);}
+.alertbar.warn .go{color:var(--warn);}
+.fixot.over{background:var(--danger-soft);}
 
 table{width:100%; border-collapse:collapse;}
 thead th{font-size:11.5px; color:var(--mut); font-weight:600; text-align:center; padding:9px 8px; border-bottom:1px solid var(--line); background:#FAFAF6;}
@@ -119,7 +152,7 @@ tbody tr.miss{background:var(--danger-soft);}
       <div class="mfield"><label for="mIn">出勤</label><input type="time" id="mIn" step="60"></div>
       <div class="mfield"><label for="mOut">退勤</label><input type="time" id="mOut" step="60"></div>
     </div>
-    <div class="mfield"><label for="mBreak">休憩（分）</label><input type="number" id="mBreak" min="0" max="480" step="5"></div>
+    <div class="mfield" id="mBreakField"><label for="mBreak">休憩（分）</label><input type="number" id="mBreak" min="0" max="480" step="5"></div>
     <div class="calcline"><span>実働時間</span><b id="mCalc">—</b></div>
     <div class="mfield">
       <label for="mReason">修正理由（必須・履歴に残ります）</label>
@@ -146,6 +179,8 @@ const $ = id => document.getElementById(id);
 
 let role     = 'system';
 let days     = M.attendanceDays();
+let breakEnabled = M.SHOP.breakEnabled;
+let fixedOtMin   = M.SHOP.fixedOvertimeMinutes;
 let approved = false;
 let target   = null;
 
@@ -163,7 +198,8 @@ const PAGE =
     '<select id="fStatus">' +
       '<option value="all">すべての状態</option>' +
       '<option value="miss">打刻漏れのみ</option>' +
-      '<option value="edited">修正済みのみ</option></select>' +
+      '<option value="edited">修正済みのみ</option>' +
+      '<option value="fixot">固定残業 注意・超過のみ</option></select>' +
     '<span class="spacer"></span>' +
     '<button class="btn ghost" id="btnCsv">CSV出力</button>' +
     '<button class="btn solid" id="btnApprove">この月を承認</button>' +
@@ -190,14 +226,41 @@ function mount(r){
   render();
 }
 
+/* ---------------- 休憩OFFの店舗への対応 ----------------
+   休憩を管理しない店舗では、保存されている休憩分を計算に使わない。
+   実働 = 退勤 − 出勤 とする。 */
+const brkOf  = d    => (breakEnabled ? (d.brk || 0) : 0);
+const asView = rows => (breakEnabled ? rows : rows.map(d => Object.assign({}, d, { brk: 0 })));
+
+/* ---------------- 固定残業 ----------------
+   スタッフ単位・月単位の集計。スタッフ絞り込みや状態絞り込みの影響を受けないよう、
+   月だけで絞ったデータから計算する。 */
+function fixedOtByStaff(){
+  const month = $('fMonth').value;
+  const out = {};
+  M.STAFF_ORDER.forEach(sid => {
+    const rows = asView(days.filter(d => d.staff === sid && d.date.startsWith(month)));
+    if(!rows.length) return;
+    const s = A.summarize(rows);
+    out[sid] = A.fixedOvertimeState(s.overtime, fixedOtMin, M.SHOP.overtimeAlertRatio);
+  });
+  return out;
+}
+
 /* ---------------- 絞り込み ---------------- */
 function filtered(){
   const staff = $('fStaff').value, status = $('fStatus').value, month = $('fMonth').value;
+  const fx = status === 'fixot' ? fixedOtByStaff() : null;
   return days.filter(d => {
     if(!d.date.startsWith(month)) return false;
     if(staff !== 'all' && d.staff !== staff) return false;
     if(status === 'miss'   && d.out != null) return false;
     if(status === 'edited' && !d.edited)     return false;
+    // 固定残業は日ではなくスタッフ単位の状態なので、該当スタッフの日をすべて残す
+    if(status === 'fixot'){
+      const f = fx[d.staff];
+      if(!f || f.state === 'normal') return false;
+    }
     return true;
   });
 }
@@ -205,21 +268,39 @@ function filtered(){
 /* ---------------- 描画 ---------------- */
 function render(){
   const rows = filtered();
-  const s = A.summarize(rows);
+  const s = A.summarize(asView(rows));
+  const fx = fixedOtByStaff();
+  const over = M.STAFF_ORDER.filter(id => fx[id] && fx[id].state === 'over');
+  const warn = M.STAFF_ORDER.filter(id => fx[id] && fx[id].state === 'warn');
 
   $('kpis').innerHTML =
     kpi('総勤務時間', A.fmtJa(s.work)) +
     kpi('出勤日数',  s.days + '<small>日</small>') +
-    kpi('休憩合計',  A.fmtJa(s.brk)) +
+    (breakEnabled ? kpi('休憩合計', A.fmtJa(s.brk)) : '') +
     kpi('残業合計',  A.fmtJa(s.overtime)) +
+    (fixedOtMin ? kpi('固定残業 超過', over.length + '<small>名</small>', over.length > 0) : '') +
     kpi('打刻漏れ',  s.missing + '<small>件</small>', s.missing > 0);
 
-  $('alerts').innerHTML = s.missing > 0
-    ? '<div class="alertbar"><b>退勤の打刻漏れが ' + s.missing + '件</b> あります。給与計算前に修正してください。' +
-      '<button class="go" id="goMiss">該当だけ表示</button></div>'
-    : '';
+  /* --- アラート帯（打刻漏れ／固定残業） --- */
+  let al = '';
+  if(s.missing > 0){
+    al += '<div class="alertbar"><b>退勤の打刻漏れが ' + s.missing + '件</b> あります。給与計算前に修正してください。' +
+          '<button class="go" id="goMiss">該当だけ表示</button></div>';
+  }
+  if(fixedOtMin && (over.length || warn.length)){
+    const nm = ids => ids.map(id => M.STAFF[id].name).join('・');
+    let msg = '';
+    if(over.length) msg += '<b>' + nm(over) + '</b> が固定残業（' + A.fmtJa(fixedOtMin) + '）を<b>超過</b>しています。';
+    if(warn.length) msg += (msg ? ' ' : '') + '<b>' + nm(warn) + '</b> が上限に近づいています。';
+    al += '<div class="alertbar' + (over.length ? '' : ' warn') + '">' + msg +
+          '<button class="go" id="goFixot">該当だけ表示</button></div>';
+  }
+  $('alerts').innerHTML = al;
+
   const gm = $('goMiss');
   if(gm) gm.addEventListener('click', () => { $('fStatus').value = 'miss'; render(); });
+  const gf = $('goFixot');
+  if(gf) gf.addEventListener('click', () => { $('fStatus').value = 'fixot'; render(); });
 
   const list = $('list');
   list.innerHTML = '';
@@ -234,8 +315,9 @@ function render(){
 
   keys.forEach(sid => {
     const items = byStaff[sid].slice().sort((a, b) => a.date.localeCompare(b.date));
-    const sub = A.summarize(items);
+    const sub = A.summarize(asView(items));
 
+    const f = fx[sid];
     const block = document.createElement('div');
     block.className = 'staffblock';
     block.innerHTML =
@@ -247,8 +329,11 @@ function render(){
         '<div class="tot">合計実働 <b>' + A.fmtJa(sub.work) + '</b></div>' +
         (approved ? '<span class="ap">承認済み</span>' : '') +
       '</div>' +
+      fixotRow(f) +
       '<table class="daytable"><thead><tr>' +
-        '<th class="l">日付</th><th>出勤</th><th>退勤</th><th>休憩</th><th>実働</th><th>状態</th><th></th>' +
+        '<th class="l">日付</th><th>出勤</th><th>退勤</th>' +
+        (breakEnabled ? '<th>休憩</th>' : '') +
+        '<th>実働</th><th>状態</th><th></th>' +
       '</tr></thead><tbody></tbody></table>' +
       '<div class="mobcards"></div>';
 
@@ -256,7 +341,7 @@ function render(){
     const mc = block.querySelector('.mobcards');
 
     items.forEach(d => {
-      const w    = A.calcWork(d.in, d.out, d.brk);
+      const w    = A.calcWork(d.in, d.out, brkOf(d));
       const miss = (w == null);
       const ot   = A.calcOvertime(w);
       const dt   = new Date(d.date + 'T00:00:00');
@@ -276,7 +361,7 @@ function render(){
         '<td class="l">' + dlabel + '</td>' +
         '<td class="mono">' + (d.in  != null ? A.toStr(d.in)  : '<span class="dash">—</span>') + '</td>' +
         '<td class="mono">' + (d.out != null ? A.toStr(d.out) : '<span class="dash">—</span>') + '</td>' +
-        '<td class="mono">' + A.fmtHM(d.brk) + '</td>' +
+        (breakEnabled ? '<td class="mono">' + A.fmtHM(d.brk) + '</td>' : '') +
         '<td class="mono"><b>' + (w != null ? A.fmtHM(w) : '<span class="dash">—</span>') + '</b></td>' +
         '<td>' + tags + '</td>' +
         '<td><button class="fixbtn">修正</button></td>';
@@ -291,7 +376,7 @@ function render(){
         '<div class="r2">' +
           '<span>出勤 <b class="mono">' + (d.in  != null ? A.toStr(d.in)  : '—') + '</b></span>' +
           '<span>退勤 <b class="mono">' + (d.out != null ? A.toStr(d.out) : '—') + '</b></span>' +
-          '<span>休憩 <b class="mono">' + A.fmtHM(d.brk) + '</b></span>' +
+          (breakEnabled ? '<span>休憩 <b class="mono">' + A.fmtHM(d.brk) + '</b></span>' : '') +
         '</div>' +
         '<div class="r3">' + tags + '<span style="margin-left:auto"><button class="fixbtn">修正</button></span></div>';
       card.querySelector('.fixbtn').addEventListener('click', () => openFix(d));
@@ -300,6 +385,22 @@ function render(){
 
     list.appendChild(block);
   });
+}
+
+/** スタッフごとの固定残業の消化バー。固定残業なしの運用では出さない */
+function fixotRow(f){
+  if(!f) return '';
+  const pct  = Math.min(100, f.percent);
+  const over = f.state === 'over';
+  const tag  = over ? '<span class="tag miss">' + A.fmtJa(Math.abs(f.remain)) + ' 超過</span>'
+             : f.state === 'warn' ? '<span class="tag ot">残り ' + A.fmtJa(f.remain) + '</span>'
+             : '';
+  return '<div class="fixot ' + f.state + '">' +
+           '<span class="l">固定残業</span>' +
+           '<span class="bar"><i style="width:' + pct + '%"></i></span>' +
+           '<span class="v"><b>' + A.fmtJa(f.used) + '</b> / ' + A.fmtJa(f.limit) +
+           '（' + f.percent + '%）</span>' + tag +
+         '</div>';
 }
 
 function kpi(label, val, alert){
@@ -315,6 +416,7 @@ function openFix(d){
     (d.edited ? '（修正履歴あり：' + d.reason + '）' : '');
   $('mIn').value    = A.toStr(d.in);
   $('mBreak').value = Math.round(d.brk || 0);   // 入力欄にも小数を出さない
+  $('mBreakField').style.display = breakEnabled ? '' : 'none';
   $('mReason').value = '';
   $('mErr').classList.remove('show');
 
@@ -341,7 +443,8 @@ function openFix(d){
 function closeFix(){ $('mask').classList.remove('show'); target = null; }
 
 function recalc(){
-  const w = A.calcWork(A.toMin($('mIn').value), A.toMin($('mOut').value), Number($('mBreak').value || 0));
+  const b = breakEnabled ? Number($('mBreak').value || 0) : 0;
+  const w = A.calcWork(A.toMin($('mIn').value), A.toMin($('mOut').value), b);
   $('mCalc').textContent = (w != null ? A.fmtJa(w) : '退勤時刻を入力してください');
 }
 ['mIn','mOut','mBreak'].forEach(id => $(id).addEventListener('input', recalc));
@@ -353,17 +456,18 @@ document.addEventListener('keydown', e => { if(e.key === 'Escape' && target) clo
 $('mSave').addEventListener('click', () => {
   if(!target) return;
   const i = A.toMin($('mIn').value), o = A.toMin($('mOut').value);
-  const b = Number($('mBreak').value || 0);
+  const b = breakEnabled ? Number($('mBreak').value || 0) : 0;
   const r = $('mReason').value.trim();
   const err = $('mErr');
   const ng = m => { err.textContent = m; err.classList.add('show'); };
 
   if(i == null)                 return ng('出勤時刻を入力してください。');
   if(o != null && o <= i)       return ng('退勤時刻は出勤時刻より後にしてください。');
-  if(o != null && (o - i) < b)  return ng('休憩時間が勤務時間を超えています。');
+  if(breakEnabled && o != null && (o - i) < b) return ng('休憩時間が勤務時間を超えています。');
   if(!r)                        return ng('修正理由を入力してください。');
 
-  target.in = i; target.out = o; target.brk = b;
+  target.in = i; target.out = o;
+  if(breakEnabled) target.brk = b;   // OFFのときは保存済みの休憩分を書き換えない
   target.edited = true; target.reason = r;
   closeFix();
   render();
@@ -380,21 +484,28 @@ function onApprove(){
 }
 
 function onCsv(){
-  const rows = [['スタッフ','日付','出勤','退勤','休憩(分)','実働(分)','実働','状態','修正理由']];
+  const head = ['スタッフ','日付','出勤','退勤'];
+  if(breakEnabled) head.push('休憩(分)');
+  head.push('実働(分)','実働','状態','修正理由');
+  const rows = [head];
+
   filtered().slice()
     .sort((a, b) => (a.staff + a.date).localeCompare(b.staff + b.date))
     .forEach(d => {
-      const w = A.calcWork(d.in, d.out, d.brk);
-      rows.push([
+      const w = A.calcWork(d.in, d.out, brkOf(d));
+      const r = [
         M.STAFF[d.staff].name, d.date,
         d.in  != null ? A.toStr(d.in)  : '',
         d.out != null ? A.toStr(d.out) : '',
-        Math.round(d.brk || 0),                 // CSVにも小数を出さない
+      ];
+      if(breakEnabled) r.push(Math.round(d.brk || 0));   // CSVにも小数を出さない
+      r.push(
         w != null ? Math.round(w) : '',
         w != null ? A.fmtHM(w) : '',
         w == null ? '退勤未打刻' : (d.edited ? '修正済' : '通常'),
         d.reason || '',
-      ]);
+      );
+      rows.push(r);
     });
   const url = URL.createObjectURL(new Blob([A.toCsv(rows)], { type:'text/csv' }));
   const a = document.createElement('a');
@@ -416,7 +527,28 @@ function toast(msg){
 }
 
 mount('system');
-MockBar.init({ role:'system', onRole: r => mount(r) });
+MockBar.init({
+  role: 'system',
+  onRole: r => mount(r),
+  toggles: [
+    {
+      key:'brk', label:'この店舗で休憩打刻を使う', value: breakEnabled,
+      onChange: v => { breakEnabled = v; render(); },
+      note:'店舗ごとの設定。OFFにすると休憩列・休憩合計が消え、実働は 退勤−出勤 になります。',
+    },
+    {
+      key:'fixot', type:'select', label:'固定残業（月あたり）', value: String(fixedOtMin),
+      options: [
+        { value:'0',    label:'固定残業なし' },
+        { value:'1200', label:'20時間' },
+        { value:'1800', label:'30時間' },
+        { value:'2700', label:'45時間' },
+      ],
+      onChange: v => { fixedOtMin = Number(v); render(); },
+      note:'30時間で 三浦さんが超過、佐藤さんが注意になります。45時間にすると両名とも通常です。',
+    },
+  ],
+});
 </script>
 </body>
 </html>

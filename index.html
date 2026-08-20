@@ -90,8 +90,8 @@ body{background:var(--cream);}
   <div class="logo">Salon<b>One</b> 改善モック</div>
   <p>勤怠管理（PC／スマホ・管理者／打刻者の4画面）と、minimo連携枠のスマホ操作（1画面）の計5画面。
      素のHTML＋CSS＋JSで、ビルドも依存ライブラリもなし。下のプレビューは実寸幅で描画したものを縮小しています。<br>
-     サイドバー・上部バーは現行画面のスクリーンショットに合わせてあります。右下の「モック設定」からロールを切り替えると、
-     可視範囲が「自店舗のみ」のロールでブランド／エリア／店舗のセレクタが消えることを確認できます。</p>
+     サイドバー・上部バーは現行画面のスクリーンショットに合わせてあります。<br>
+     右下の<b>「モック設定」</b>から、ロール／GPSのオンオフ／休憩のオンオフ／固定残業の時間を切り替えて確認できます。</p>
 </div>
 
 <div class="wrap">
@@ -104,14 +104,14 @@ body{background:var(--cream);}
         <div class="bar"><span class="nm">管理者・PC</span><span class="px">1280px</span>
           <a class="open" href="screens/kintai_admin.html" target="_blank" rel="noopener">開く</a></div>
         <div class="path">/time-tracking</div>
-        <div class="desc">現行シェルの中。KPI5枚＋スタッフ別テーブル。打刻漏れは行ごと赤地。</div>
+        <div class="desc">現行シェルの中。KPI＋スタッフ別テーブル＋固定残業の消化バー。</div>
         <div class="view pc"><iframe src="screens/kintai_admin.html" title="勤怠管理 管理者 PC"></iframe></div>
       </div>
       <div class="shot">
         <div class="bar"><span class="nm">管理者・スマホ</span><span class="px">390px</span>
           <a class="open" href="screens/kintai_admin.html" target="_blank" rel="noopener">開く</a></div>
         <div class="path">/time-tracking</div>
-        <div class="desc">表を捨ててカードへ。横スクロールなし。</div>
+        <div class="desc">表を捨ててカードへ。横スクロールなし。固定残業バーも出ます。</div>
         <div class="view sp"><iframe src="screens/kintai_admin.html" title="勤怠管理 管理者 スマホ"></iframe></div>
       </div>
     </div>
@@ -125,7 +125,7 @@ body{background:var(--cream);}
         <div class="bar"><span class="nm">打刻者・PC</span><span class="px">1280px</span>
           <a class="open" href="screens/kintai_punch.html" target="_blank" rel="noopener">開く</a></div>
         <div class="path">/punch</div>
-        <div class="desc">現行と同じ中央1カラム。所属店舗・GPS状態・押せるボタンだけ有効。</div>
+        <div class="desc">現行と同じ中央1カラム。所属店舗・GPS状態。休憩OFFの店舗では2ボタンに。</div>
         <div class="view pc"><iframe src="screens/kintai_punch.html" title="打刻 PC"></iframe></div>
       </div>
       <div class="shot">
@@ -146,7 +146,7 @@ body{background:var(--cream);}
         <div class="bar"><span class="nm">minimo連携枠・スマホ</span><span class="px">390px</span>
           <a class="open" href="screens/minimo_slots.html" target="_blank" rel="noopener">開く</a></div>
         <div class="path">/schedule</div>
-        <div class="desc">タップで編集、ドラッグで移動、ハンドルで伸縮、長押しで新規。重複は赤で保存不可。</div>
+        <div class="desc">「minimo連携」から枠調整と直前割引。伸縮は上下ハンドルのみ。重複は赤で保存不可。</div>
         <div class="view sp"><iframe src="screens/minimo_slots.html" title="minimo連携枠 スマホ"></iframe></div>
       </div>
     </div>
@@ -161,7 +161,7 @@ body{background:var(--cream);}
       <li><code>assets/base.css</code> … リセットと共通パーツ（ボタン・カード・タグ・モーダル・トースト）</li>
       <li><code>assets/attendance.js</code> … DOMに触らない純粋関数。移植先は <code>utils/attendance.ts</code></li>
       <li><code>assets/mockdata.js</code> … ダミーデータ。移植時はAPIレスポンスに置き換わる</li>
-      <li><code>assets/mockbar.js</code> … <b>移植対象外</b>。ロール切替・GPSオンオフを試すためのレビュー用足場</li>
+      <li><code>assets/mockbar.js</code> … <b>移植対象外</b>。ロール／GPS／休憩／固定残業を切り替えるレビュー用足場</li>
       <li><code>assets/logo*.png</code> … 支給いただいたロゴ。<code>logo-light.png</code> は濃色サイドバー用に白へ置換したもの</li>
     </ul>
     <div style="margin-top:10px">

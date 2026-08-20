@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>SalonOne｜予約管理（スマホ）minimo連携枠</title>
+<title>SalonOne｜予約管理（スマホ）minimo連携</title>
 <!--
 ================================================================================
 [minimo連携枠] スマホの予約表で連携枠を直接編集する  → 移植先: /schedule（スマホ）
@@ -13,13 +13,19 @@
   タップ判定も狭く誤タップしやすい。変更がminimoへ同期されたか画面から分からない。
 
 ■ 操作仕様
-  1. ピンクのバーをタップ … 編集モード（列全幅の半透明ブロック＋上下ハンドル）
-  2. ブロック本体をドラッグ … 枠全体を移動（15分スナップ）
-  3. 上下ハンドルをドラッグ … 開始/終了を伸縮（最小15分）
+  1. スタッフ名の下の「minimo連携」をタップ … minimo連携シートを開く
+       ・連携枠タブ  … その日の枠一覧。「調整」で編集モードへ
+       ・直前割引タブ … 掲載メニューから直前割を作成する
+  2. ピンクのバーをタップ … 編集モード（列全幅の半透明ブロック＋上下ハンドル）
+  3. 上下ハンドルをドラッグ … 開始/終了を伸縮（最小15分・15分スナップ）
   4. 空き時間を長押し(500ms) … 新規枠を60分で作成し編集モードへ（触覚フィードバックあり）
   5. 画面下の操作バー … 時刻表示／削除／キャンセル／保存
   6. 予約・他のminimo枠と重なると赤表示＋保存不可
   7. 保存/削除で同期ボタンに「未同期件数」バッジ → 同期でクリア
+
+  ※ 枠ごと動かす操作は入れていない。伸縮は上下ハンドルのみ。
+     ブロック本体のドラッグに移動を割り当てると、スクロールと競合して
+     意図しない移動が起きやすいため。
 
 ■ 実装定数
   DAY_START=9:00 / DAY_END=19:00 / SNAP=15分 / PX15=26px（短縮表示は16px）
@@ -144,9 +150,13 @@ body.editing .frame{padding-bottom:150px;}
 .sh-cell .nm{font-weight:700; font-size:14px;}
 .sh-cell .sf{font-size:11px; color:var(--mut);}
 .sh-cell .mtag{
-  display:inline-block; margin-top:3px; font-size:10px; font-weight:600;
-  color:var(--pink); background:var(--pink-soft); border-radius:6px; padding:1px 7px;
+  display:inline-flex; align-items:center; gap:4px; margin-top:3px;
+  font-size:10px; font-weight:600;
+  color:var(--pink); background:var(--pink-soft); border-radius:6px; padding:2px 8px;
+  border:1px solid rgba(244,63,94,.30); cursor:pointer;
 }
+.sh-cell .mtag::after{content:'›'; font-size:12px; line-height:1; opacity:.75;}
+.sh-cell .mtag:active{background:rgba(244,63,94,.22);}
 
 /* ---------- タイムグリッド ---------- */
 .board{display:flex; background:var(--paper);}
@@ -243,6 +253,118 @@ body.editing .frame{padding-bottom:150px;}
 .eb-actions .btn.solid{flex:1.4;}
 
 body.editing .toast{bottom:150px;}
+body.sheeting .frame{padding-bottom:150px;}
+
+/* ---------- minimo連携シート ---------- */
+.msheet{
+  position:fixed; left:50%; transform:translate(-50%,110%); bottom:0;
+  width:100%; max-width:430px; z-index:62;
+  background:#fff; border-top:1px solid var(--line); border-radius:16px 16px 0 0;
+  box-shadow:0 -8px 24px rgba(0,0,0,.14);
+  transition:transform .18s ease; display:flex; flex-direction:column; max-height:82dvh;
+}
+.msheet.show{transform:translate(-50%,0);}
+.ms-head{display:flex; align-items:center; gap:9px; padding:13px 14px 10px;}
+.ms-dot{width:10px; height:10px; border-radius:3px; background:var(--pink); flex:0 0 auto;}
+.ms-title{font-size:15px; font-weight:700;}
+.ms-sub{font-size:11.5px; color:var(--mut);}
+.ms-back, .ms-close{
+  width:30px; height:30px; border-radius:8px; display:flex; align-items:center;
+  justify-content:center; font-size:16px; color:var(--mut); flex:0 0 auto;
+}
+/* display:flex はUA既定の [hidden]{display:none} を上書きするので打ち消す。
+   同期バッジ(.badge)と同じ罠。React移植時も hidden 属性と flex の併用に注意 */
+.ms-back[hidden]{display:none;}
+.ms-close{margin-left:auto;}
+.ms-back:active, .ms-close:active{background:var(--muted-bg);}
+.ms-tabs{display:flex; gap:4px; padding:0 14px; border-bottom:1px solid var(--line);}
+.ms-tabs button{
+  padding:8px 14px; font-size:13px; font-weight:600; color:var(--mut);
+  border-bottom:2px solid transparent; margin-bottom:-1px;
+}
+.ms-tabs button.on{color:var(--teal); border-bottom-color:var(--teal);}
+.ms-body{
+  padding:12px 14px calc(14px + env(safe-area-inset-bottom));
+  overflow-y:auto; -webkit-overflow-scrolling:touch;
+}
+
+/* 連携枠タブ */
+.slotrow{
+  display:flex; align-items:center; gap:10px; border:1px solid var(--line);
+  border-radius:10px; padding:10px 12px; margin-bottom:8px;
+}
+.slotrow .tm{font-weight:700; font-variant-numeric:tabular-nums; font-size:14px;}
+.slotrow .du{font-size:11.5px; color:var(--mut);}
+.slotrow .go{
+  margin-left:auto; height:32px; padding:0 13px; border-radius:8px; font-size:12.5px;
+  font-weight:600; border:1px solid var(--gold); color:var(--teal); background:#fff;
+}
+.ms-empty{color:var(--mut); font-size:12.5px; padding:10px 2px;}
+.ms-note{font-size:11px; color:var(--mut); line-height:1.55; margin-top:10px;
+  border-top:1px solid var(--line); padding-top:9px;}
+.addslot{
+  width:100%; height:40px; border-radius:10px; border:1px dashed rgba(244,63,94,.5);
+  color:var(--pink); font-size:13px; font-weight:600; background:var(--pink-soft);
+}
+
+/* 直前割引タブ */
+.salonid{
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  background:var(--muted-bg); border-radius:10px; padding:9px 11px; margin-bottom:11px; font-size:12px;
+}
+.salonid .id{font-weight:700; font-variant-numeric:tabular-nums;}
+.salonid button{
+  height:28px; padding:0 10px; border-radius:7px; border:1px solid var(--line);
+  background:#fff; font-size:11.5px; font-weight:600;
+}
+.salonid .open{margin-left:auto; border-color:var(--teal); color:var(--teal);}
+
+.menu{border:1px solid var(--line); border-radius:11px; padding:10px; margin-bottom:9px; display:flex; gap:10px;}
+.menu .th{
+  width:56px; height:56px; flex:0 0 auto; border-radius:8px; background:#E9E7E0;
+  display:flex; align-items:center; justify-content:center; text-align:center;
+  font-size:8.5px; color:#7C7A70; line-height:1.25; padding:3px; font-weight:600;
+}
+.menu .info{flex:1; min-width:0;}
+.menu .badges{display:flex; gap:4px; flex-wrap:wrap; margin-bottom:3px;}
+.mb{font-size:9.5px; font-weight:700; border-radius:5px; padding:1px 6px; white-space:nowrap;}
+.mb.pub{background:var(--ok-soft); color:var(--ok);}
+.mb.new{background:var(--pink-soft); color:var(--pink);}
+.mb.only{background:#fff; color:var(--info); border:1px solid rgba(47,109,168,.45);}
+.menu .ttl{font-size:12.5px; font-weight:700; line-height:1.35;}
+.menu .pr{font-size:12px; margin-top:3px;}
+.menu .pr b{font-size:14px;}
+.menu .pr s{color:var(--mut); font-size:11px; margin-left:5px;}
+.menu .pr .mn{color:var(--mut); margin-left:6px; font-size:11.5px;}
+.menu .tg{display:flex; gap:4px; flex-wrap:wrap; margin-top:5px;}
+.menu .tg span{font-size:9.5px; background:var(--muted-bg); color:var(--mut); border-radius:4px; padding:1px 6px;}
+.menu .sale{
+  margin-top:8px; height:32px; width:100%; border-radius:8px; font-size:12.5px; font-weight:700;
+  border:1px solid var(--gold); color:#8A6D2F; background:#fff;
+  display:flex; align-items:center; justify-content:center; gap:5px;
+}
+.menu .sale:active{background:var(--gold-soft);}
+
+/* 直前割作成フォーム */
+.sf{margin-bottom:13px;}
+.sf label{display:block; font-size:11.5px; color:var(--mut); margin-bottom:5px;}
+.sf select{width:100%; height:42px; border:1px solid var(--line); border-radius:10px; background:#fff; padding:0 10px;}
+.rates{display:grid; grid-template-columns:repeat(4,1fr); gap:7px;}
+.rates button{
+  height:42px; border-radius:10px; border:1px solid var(--line); background:#fff;
+  font-size:13.5px; font-weight:700;
+}
+.rates button.on{background:var(--teal); color:#fff; border-color:var(--teal);}
+.priceline{
+  background:var(--muted-bg); border-radius:10px; padding:11px 12px; margin-bottom:13px;
+  display:flex; align-items:baseline; justify-content:space-between;
+}
+.priceline .was{color:var(--mut); font-size:12px;}
+.priceline .now{font-size:20px; font-weight:700; color:var(--pink);}
+.sf-actions{display:flex; gap:8px;}
+.sf-actions button{flex:1; height:46px; border-radius:10px; font-size:14px; font-weight:600;}
+.sf-actions .cancel{border:1px solid var(--line); background:#fff;}
+.sf-actions .make{background:var(--teal); color:#fff;}
 .footnote{padding:14px; font-size:11px; color:var(--mut); text-align:center;}
 </style>
 </head>
@@ -286,7 +408,8 @@ body.editing .toast{bottom:150px;}
   <button class="createbtn" id="btnCreate"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>予約作成</button>
 
   <div class="hint" id="hint">
-    <div><b>ピンクのバー＝minimo連携枠</b>。タップで編集、空き時間を<b>長押し</b>で新規作成できます。</div>
+    <div>スタッフ名の下の<b>「minimo連携」</b>から枠と直前割引を操作できます。
+      ピンクのバーは<b>タップ→上下のタブをドラッグ</b>で伸縮、空き時間の<b>長押し</b>で新規作成です。</div>
     <button class="close" id="hintClose" aria-label="閉じる">&#x2715;</button>
   </div>
 
@@ -311,6 +434,24 @@ body.editing .toast{bottom:150px;}
     <button class="btn outline" id="btnCancel">キャンセル</button>
     <button class="btn solid" id="btnSave">保存</button>
   </div>
+</div>
+
+<!-- minimo連携シート（スタッフ名の下の「minimo連携」から開く） -->
+<div class="msheet" id="msheet" aria-hidden="true" role="dialog" aria-labelledby="msTitle">
+  <div class="ms-head">
+    <button class="ms-back" id="msBack" hidden aria-label="戻る">&#x2039;</button>
+    <span class="ms-dot"></span>
+    <div>
+      <div class="ms-title" id="msTitle">minimo連携</div>
+      <div class="ms-sub" id="msSub">—</div>
+    </div>
+    <button class="ms-close" id="msClose" aria-label="閉じる">&#x2715;</button>
+  </div>
+  <div class="ms-tabs" id="msTabs">
+    <button class="on" data-t="slots">連携枠</button>
+    <button data-t="sale">直前割引</button>
+  </div>
+  <div class="ms-body" id="msBody"></div>
 </div>
 
 <div class="toast" id="toast" role="status"></div>
@@ -371,7 +512,8 @@ function buildHead(){
     c.className = 'sh-cell';
     c.innerHTML = '<div class="nm">' + st.name + '</div>' +
                   '<div class="sf">' + st.shiftLabel + '</div>' +
-                  '<div class="mtag">minimo連携枠</div>';
+                  '<button class="mtag" data-staff="' + st.id + '">minimo連携</button>';
+    c.querySelector('.mtag').addEventListener('click', () => openSheet(st.id));
     staffhead.appendChild(c);
   });
 }
@@ -491,24 +633,23 @@ function refreshGhost(){
   btnSave.disabled = conf;
 }
 
-/* ================= ドラッグ =================
+/* ================= ドラッグ（上下ハンドルのみ） =================
+   枠ごと動かす操作は入れていない。ブロック本体のドラッグに移動を割り当てると
+   スクロールと競合して意図しない移動が起きやすいため、伸縮だけに絞っている。
    ドラッグ中は state を更新して style を直接書き換える。
    React移植時も、この区間だけは setState を挟まずに ref + style 直更新にすること。 */
 function onGhostDown(e){
-  e.preventDefault(); e.stopPropagation();
   const h = e.target.closest('.handle');
-  drag = { mode: h ? h.dataset.h : 'move', y0: e.clientY, s0: edit.start, e0: edit.end };
+  if(!h) return;                       // ハンドル以外では何も始めない
+  e.preventDefault(); e.stopPropagation();
+  drag = { mode: h.dataset.h, y0: e.clientY, s0: edit.start, e0: edit.end };
   e.currentTarget.setPointerCapture(e.pointerId);
 }
 function onGhostMove(e){
   if(!drag) return;
   e.preventDefault();
   const dm = (e.clientY - drag.y0) / ppm();
-  if(drag.mode === 'move'){
-    const dur = drag.e0 - drag.s0;
-    edit.start = clamp(snap(drag.s0 + dm), DAY_START, DAY_END - dur);
-    edit.end   = edit.start + dur;
-  }else if(drag.mode === 'start'){
+  if(drag.mode === 'start'){
     edit.start = clamp(snap(drag.s0 + dm), DAY_START, edit.end - SNAP);
   }else{
     edit.end   = clamp(snap(drag.e0 + dm), edit.start + SNAP, DAY_END);
@@ -529,6 +670,7 @@ function hasConflict(){
 /* ================= 編集モード ================= */
 function enterEdit(s){
   if(edit){ toast('編集中の枠があります。保存かキャンセルをしてください'); return; }
+  closeSheet();                        // 同じ位置に出るので同時には開かない
   edit = s.id
     ? { slotId: s.id, staff: s.staff, start: s.start, end: s.end, isNew: false }
     : { slotId: null, staff: s.staff, start: s.start, end: s.end, isNew: true };
@@ -594,6 +736,203 @@ colsEl.addEventListener('pointerdown', e => {
     }
   });
 });
+
+/* ================= minimo連携シート =================
+   スタッフ名の下の「minimo連携」から開く。編集バーと同じ位置に出るため排他。
+     連携枠タブ  … その日の枠一覧。「調整」で編集モードへ
+     直前割引タブ … 掲載メニューから直前割を作成する（Minimo設定のメニュー設定に相当）
+   実装では GET /api/stores/:sid/minimo-menus?staff_id= 相当が要る。 */
+const sheetEl = $('msheet');
+let sheetStaff = null;     // 開いているスタッフ
+let sheetTab   = 'slots';  // slots | sale
+let saleMenu   = null;     // 直前割作成中のメニュー
+let saleRate   = 20;       // 選択中の割引率(%)
+let saleSlotId = null;     // 対象の枠
+
+const yen = n => '¥' + n.toLocaleString('ja-JP');
+
+function openSheet(staffId){
+  if(edit){ toast('編集中の枠があります。保存かキャンセルをしてください'); return; }
+  sheetStaff = staffId;
+  sheetTab   = 'slots';
+  saleMenu   = null;
+  const st = staffList.find(x => x.id === staffId);
+  $('msSub').textContent = st ? st.name : '';
+  document.body.classList.add('sheeting');
+  sheetEl.classList.add('show');
+  sheetEl.setAttribute('aria-hidden', 'false');
+  renderSheet();
+}
+function closeSheet(){
+  if(!sheetEl.classList.contains('show')) return;
+  sheetEl.classList.remove('show');
+  sheetEl.setAttribute('aria-hidden', 'true');
+  document.body.classList.remove('sheeting');
+  sheetStaff = null; saleMenu = null;
+}
+
+function renderSheet(){
+  const inForm = !!saleMenu;
+  $('msBack').hidden  = !inForm;
+  $('msTabs').style.display = inForm ? 'none' : '';
+  $('msTitle').textContent  = inForm ? '直前割を作成' : 'minimo連携';
+  $('msTabs').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.t === sheetTab));
+  $('msBody').innerHTML = inForm ? saleFormHtml()
+                        : sheetTab === 'slots' ? slotsHtml() : saleListHtml();
+  wireSheet();
+}
+
+/* ---- 連携枠タブ ---- */
+function slotsHtml(){
+  const mine = slots.filter(o => o.staff === sheetStaff)
+                    .sort((a, b) => a.start - b.start);
+  const rows = mine.length
+    ? mine.map(o =>
+        '<div class="slotrow">' +
+          '<div><div class="tm">' + fmt(o.start) + ' – ' + fmt(o.end) + '</div>' +
+          '<div class="du">' + fmtDur(o.end - o.start) + '</div></div>' +
+          '<button class="go" data-adjust="' + o.id + '">調整</button>' +
+        '</div>').join('')
+    : '<div class="ms-empty">この日の連携枠はまだありません。</div>';
+  return rows +
+    '<button class="addslot" id="msAdd">＋ 枠を追加（60分）</button>' +
+    '<div class="ms-note">「調整」を押すと予約表に戻り、枠が編集モードになります。' +
+    '上下のタブをドラッグして開始・終了を伸縮してください（15分単位）。<br>' +
+    '空き時間の長押しでも新規作成できます。</div>';
+}
+
+/* ---- 直前割引タブ ---- */
+function saleListHtml(){
+  const M2 = M.MINIMO;
+  const menus = M2.menus.map(m =>
+    '<div class="menu">' +
+      '<div class="th">' + m.thumb + '</div>' +
+      '<div class="info">' +
+        '<div class="badges">' +
+          (m.published ? '<span class="mb pub">公開中</span>' : '') +
+          (m.isNew ? '<span class="mb new">新規</span>' : '') +
+          (m.minimoOnly ? '<span class="mb only">ミニモ限定</span>' : '') +
+        '</div>' +
+        '<div class="ttl">' + m.title + '</div>' +
+        '<div class="pr"><b>' + yen(m.price) + '</b>' +
+          (m.wasPrice ? '<s>' + yen(m.wasPrice) + '</s>' : '') +
+          '<span class="mn">' + m.minutes + '分</span></div>' +
+        '<div class="tg">' + m.tags.map(t => '<span>' + t + '</span>').join('') + '</div>' +
+        '<button class="sale" data-sale="' + m.id + '">％ 直前割を作成</button>' +
+      '</div>' +
+    '</div>').join('');
+
+  return '<div class="salonid">サロンID <span class="id">' + M2.salonId + '</span>' +
+           '<button id="msCopy">コピー</button>' +
+           '<button class="open" id="msOpen">Minimoを開く</button></div>' +
+         menus +
+         '<div class="ms-note">掲載メニューは Minimo 側の設定です。ここからは直前割の作成だけを行います。<br>' +
+         'メニューそのものの追加・編集は「Minimoを開く」から。</div>';
+}
+
+/* ---- 直前割作成フォーム ---- */
+function saleFormHtml(){
+  const m = saleMenu;
+  const after = Math.round(m.price * (100 - saleRate) / 100 / 10) * 10;   // 10円単位
+  const mine = slots.filter(o => o.staff === sheetStaff).sort((a, b) => a.start - b.start);
+  if(saleSlotId == null && mine.length) saleSlotId = mine[0].id;
+
+  const slotOpts = mine.length
+    ? mine.map(o => '<option value="' + o.id + '"' + (o.id === saleSlotId ? ' selected' : '') + '>' +
+        fmt(o.start) + ' – ' + fmt(o.end) + '（' + fmtDur(o.end - o.start) + '）</option>').join('')
+    : '<option value="">連携枠がありません</option>';
+
+  return '<div class="sf"><label>対象メニュー</label>' +
+           '<div class="menu" style="margin:0"><div class="th">' + m.thumb + '</div>' +
+           '<div class="info"><div class="ttl">' + m.title + '</div>' +
+           '<div class="pr"><b>' + yen(m.price) + '</b><span class="mn">' + m.minutes + '分</span></div>' +
+           '</div></div></div>' +
+
+         '<div class="sf"><label>割引率</label><div class="rates">' +
+           M.MINIMO.discountRates.map(r =>
+             '<button data-rate="' + r + '"' + (r === saleRate ? ' class="on"' : '') + '>' + r + '%</button>').join('') +
+         '</div></div>' +
+
+         '<div class="priceline"><span class="was">通常 ' + yen(m.price) + '</span>' +
+           '<span class="now">' + yen(after) + '</span></div>' +
+
+         '<div class="sf"><label for="msSlot">対象の連携枠</label>' +
+           '<select id="msSlot"' + (mine.length ? '' : ' disabled') + '>' + slotOpts + '</select></div>' +
+
+         '<div class="sf"><label for="msWhen">公開タイミング</label><select id="msWhen">' +
+           M.MINIMO.releaseTimings.map(t => '<option>' + t + '</option>').join('') +
+         '</select></div>' +
+
+         '<div class="sf-actions">' +
+           '<button class="cancel" id="msSaleCancel">キャンセル</button>' +
+           '<button class="make" id="msSaleMake"' + (mine.length ? '' : ' disabled') + '>作成する</button>' +
+         '</div>';
+}
+
+/* ---- シート内のイベント配線 ---- */
+function wireSheet(){
+  const body = $('msBody');
+
+  body.querySelectorAll('[data-adjust]').forEach(b => b.addEventListener('click', () => {
+    const t = slots.find(o => o.id === b.dataset.adjust);
+    if(t) enterEdit(t);                    // enterEdit 側でシートを閉じる
+  }));
+
+  const add = $('msAdd');
+  if(add) add.addEventListener('click', () => {
+    const staff = sheetStaff;
+    // 空いている時間を探して60分の枠を提案する
+    let start = DAY_START;
+    const busy = slots.filter(o => o.staff === staff)
+                      .concat(reservations.filter(r => r.staff === staff))
+                      .sort((a, b) => a.start - b.start);
+    busy.forEach(o => { if(start < o.end && start + 60 > o.start) start = snap(o.end); });
+    start = clamp(start, DAY_START, DAY_END - 60);
+    enterEdit({ staff: staff, start: start, end: start + 60 });
+  });
+
+  body.querySelectorAll('[data-sale]').forEach(b => b.addEventListener('click', () => {
+    saleMenu   = M.MINIMO.menus.find(m => m.id === b.dataset.sale);
+    saleRate   = 20;
+    saleSlotId = null;
+    renderSheet();
+  }));
+
+  body.querySelectorAll('[data-rate]').forEach(b => b.addEventListener('click', () => {
+    saleRate = Number(b.dataset.rate);
+    renderSheet();
+  }));
+
+  const sl = $('msSlot');
+  if(sl) sl.addEventListener('change', e => { saleSlotId = e.target.value; });
+
+  const cp = $('msCopy');
+  if(cp) cp.addEventListener('click', () => toast('サロンIDをコピーしました（モック）'));
+  const op = $('msOpen');
+  if(op) op.addEventListener('click', () => toast('Minimoを開きます（このモックの対象外です）'));
+
+  const cancel = $('msSaleCancel');
+  if(cancel) cancel.addEventListener('click', () => { saleMenu = null; renderSheet(); });
+
+  const make = $('msSaleMake');
+  if(make) make.addEventListener('click', () => {
+    const t = slots.find(o => o.id === saleSlotId);
+    const range = t ? fmt(t.start) + '–' + fmt(t.end) : '';
+    dirty++;
+    updateSyncBadge();
+    saleMenu = null;
+    sheetTab = 'sale';
+    renderSheet();
+    toast('直前割を作成しました（' + saleRate + '%OFF・' + range + '・同期待ち）');
+  });
+}
+
+$('msClose').addEventListener('click', closeSheet);
+$('msBack').addEventListener('click', () => { saleMenu = null; renderSheet(); });
+$('msTabs').querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+  sheetTab = b.dataset.t;
+  renderSheet();
+}));
 
 /* ================= 同期・その他UI ================= */
 function updateSyncBadge(){

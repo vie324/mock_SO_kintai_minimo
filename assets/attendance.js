@@ -80,6 +80,32 @@ window.Attendance = (function () {
     return Math.max(0, workMin - (standardMin == null ? STANDARD_MIN : standardMin));
   }
 
+  /**
+   * 固定残業（みなし残業）の消化状況。
+   * サロン・整体院では固定残業で回す店舗が多いため、月あたりの上限に対して
+   * 「収まっているか／超えそうか／超えたか」を判定する。
+   *
+   *   normal … 通常
+   *   warn   … alertRatio（既定80%）以上。超えそうなので管理者に知らせる
+   *   over   … 上限超過。超過分は別途支給が要るため、給与計算前に必ず気づかせる
+   *
+   * limitMin が 0 / null の店舗は固定残業なしの運用 → 判定しない（null を返す）
+   */
+  function fixedOvertimeState(usedMin, limitMin, alertRatio) {
+    if (!limitMin) return null;
+    const ratio = usedMin / limitMin;
+    return {
+      used: usedMin,
+      limit: limitMin,
+      ratio: ratio,
+      percent: Math.round(ratio * 100),
+      remain: Math.round(limitMin - usedMin),          // 負なら超過分
+      state: usedMin > limitMin ? 'over'
+           : ratio >= (alertRatio == null ? 0.8 : alertRatio) ? 'warn'
+           : 'normal',
+    };
+  }
+
   /** 1日の状態を判定。attendance_days.status に対応 */
   function dayStatus(day) {
     if (day.in == null && day.out == null) return 'absent';
@@ -119,8 +145,20 @@ window.Attendance = (function () {
   const PUNCH_NEXT    = { clock_in:'working', break_start:'break', break_end:'working', clock_out:'done' };
   const PUNCH_STATUS  = { none:'未出勤', working:'勤務中', break:'休憩中', done:'退勤済み' };
 
+  /**
+   * その状態で打てる打刻の種類。
+   * 休憩を管理しない店舗（SHOP.breakEnabled=false）では休憩の2種を除く。
+   */
+  function allowedPunches(state, breakEnabled) {
+    const list = PUNCH_ALLOWED[state] || [];
+    if (breakEnabled === false) {
+      return list.filter(t => t !== 'break_start' && t !== 'break_end');
+    }
+    return list;
+  }
+
   /** その打刻が今の状態から可能か */
-  const canPunch = (state, type) => (PUNCH_ALLOWED[state] || []).includes(type);
+  const canPunch = (state, type, breakEnabled) => allowedPunches(state, breakEnabled).includes(type);
 
   /**
    * 打刻の並び → その時点の実働・休憩
@@ -155,8 +193,8 @@ window.Attendance = (function () {
   return {
     STANDARD_MIN, DOW, pad,
     fmtHM, fmtJa, toStr, toMin,
-    calcWork, calcOvertime, dayStatus, summarize,
-    PUNCH_LABEL, PUNCH_ALLOWED, PUNCH_NEXT, PUNCH_STATUS, canPunch, punchProgress,
+    calcWork, calcOvertime, dayStatus, summarize, fixedOvertimeState,
+    PUNCH_LABEL, PUNCH_ALLOWED, PUNCH_NEXT, PUNCH_STATUS, allowedPunches, canPunch, punchProgress,
     toCsv,
   };
 })();

@@ -25,6 +25,13 @@
   店舗ごとの設定（使わない店舗があるため）。mockdata.js の SHOP.gpsEnabled。
   設定場所は 設定 > 管理設定 > 店舗管理 が自然だが、実装時に要確認。
 
+■ 休憩機能のオン/オフ
+  休憩を管理しない店舗があるため、こちらも店舗ごとの設定。SHOP.breakEnabled。
+  OFFのとき: 休憩開始／休憩戻りのボタンを出さない（＝出勤・退勤の2ボタンだけ）
+            「今日の打刻」から休憩の欄も消す
+            実働 = 退勤 − 出勤（休憩控除なし）
+  ステートマシンも none ―clock_in→ working ―clock_out→ done の2遷移だけになる。
+
 ■ ステートマシン
   none ―clock_in→ working ―break_start→ break ―break_end→ working ―clock_out→ done
   ※ 画面の制御は「押させない」ためのもの。サーバー側でも同じ検証をして
@@ -127,6 +134,7 @@ let punchState = 'none';        // none | working | break | done
 let punches    = [];            // { type, at }
 let gps        = 'ok';          // ok | far | error
 let gpsEnabled = M.SHOP.gpsEnabled;
+let breakEnabled = M.SHOP.breakEnabled;
 let clockTimer = null, progTimer = null;
 
 const GPS_TEXT = {
@@ -170,8 +178,8 @@ const PAGE =
       '<div class="punchgrid">' +
         '<button class="punchbtn pri" data-type="clock_in"><span class="ico">' + SVG.in + '出勤</span><small>勤務をはじめる</small></button>' +
         '<button class="punchbtn end" data-type="clock_out"><span class="ico">' + SVG.out + '退勤</span><small>勤務をおわる</small></button>' +
-        '<button class="punchbtn sec" data-type="break_start"><span class="ico">' + SVG.cup + '休憩開始</span><small>離席します</small></button>' +
-        '<button class="punchbtn sec" data-type="break_end"><span class="ico">' + SVG.play + '休憩戻り</span><small>勤務にもどる</small></button>' +
+        '<button class="punchbtn sec" data-break data-type="break_start"><span class="ico">' + SVG.cup + '休憩開始</span><small>離席します</small></button>' +
+        '<button class="punchbtn sec" data-break data-type="break_end"><span class="ico">' + SVG.play + '休憩戻り</span><small>勤務にもどる</small></button>' +
       '</div>' +
       '<p class="note">押せるボタンだけが有効になります（二重打刻・順序ミスを画面側で防止）。</p>' +
     '</div>' +
@@ -179,8 +187,8 @@ const PAGE =
     '<div class="card">' +
       '<h2>今日の打刻</h2>' +
       '<div class="progress">' +
-        '<div class="pbox"><div class="l">実働（途中経過）</div><div class="v tnum" id="pWork">—</div></div>' +
-        '<div class="pbox"><div class="l">休憩</div><div class="v tnum" id="pBreak">—</div></div>' +
+        '<div class="pbox" id="pWorkBox"><div class="l">実働（途中経過）</div><div class="v tnum" id="pWork">—</div></div>' +
+        '<div class="pbox" id="pBreakBox"><div class="l">休憩</div><div class="v tnum" id="pBreak">—</div></div>' +
       '</div>' +
       '<ul class="tl" id="pTimeline"></ul>' +
     '</div>' +
@@ -207,7 +215,7 @@ function mount(r){
   document.querySelectorAll('.punchbtn').forEach(b => {
     b.addEventListener('click', () => {
       const type = b.dataset.type;
-      if(!A.canPunch(punchState, type) || !posOk()) return;   // 二重防御
+      if(!A.canPunch(punchState, type, breakEnabled) || !posOk()) return;   // 二重防御
       const at = nowMin();
       punches.push({ type: type, at: at });
       punchState = A.PUNCH_NEXT[type];
@@ -241,8 +249,15 @@ function render(){
 
   renderGps();
 
+  // 休憩を管理しない店舗ではボタンごと消す（押せないボタンを残すより意図が伝わる）
+  document.querySelectorAll('.punchbtn[data-break]').forEach(b => {
+    b.style.display = breakEnabled ? '' : 'none';
+  });
+  $('pBreakBox').style.display = breakEnabled ? '' : 'none';
+  $('pWorkBox').style.gridColumn = breakEnabled ? '' : 'span 2';
+
   document.querySelectorAll('.punchbtn').forEach(b => {
-    b.disabled = !A.canPunch(punchState, b.dataset.type) || !posOk();
+    b.disabled = !A.canPunch(punchState, b.dataset.type, breakEnabled) || !posOk();
   });
 
   const tl = $('pTimeline');
@@ -309,11 +324,23 @@ mount('system');
 MockBar.init({
   role: 'system',
   onRole: r => mount(r),
-  toggles: [{
-    key:'gps', label:'この店舗でGPS打刻を使う', value: gpsEnabled,
-    onChange: v => { gpsEnabled = v; render(); },
-    note:'店舗ごとの設定。OFFにするとGPSカードが消え、位置に関係なく打刻できます。',
-  }],
+  toggles: [
+    {
+      key:'gps', label:'この店舗でGPS打刻を使う', value: gpsEnabled,
+      onChange: v => { gpsEnabled = v; render(); },
+      note:'店舗ごとの設定。OFFにするとGPSカードが消え、位置に関係なく打刻できます。',
+    },
+    {
+      key:'brk', label:'この店舗で休憩打刻を使う', value: breakEnabled,
+      onChange: v => {
+        breakEnabled = v;
+        // 休憩中にOFFにされたら勤務中へ戻す（存在しない状態に取り残さない）
+        if(!v && punchState === 'break') punchState = 'working';
+        render();
+      },
+      note:'店舗ごとの設定。OFFにすると休憩ボタンと休憩欄が消え、実働は 退勤−出勤 になります。',
+    },
+  ],
 });
 </script>
 </body>

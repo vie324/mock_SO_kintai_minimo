@@ -17,7 +17,8 @@ window.MockBar = (function () {
   }
   .mockbar-btn::before{content:''; width:7px; height:7px; border-radius:50%; background:var(--gold);}
   .mockbar-panel{
-    display:none; position:absolute; right:0; bottom:44px; width:252px;
+    display:none; position:absolute; right:0; bottom:44px; width:264px;
+    max-height:70vh; overflow-y:auto;
     background:#fff; border:1px solid var(--line); border-radius:12px;
     box-shadow:0 10px 30px rgba(0,0,0,.20); padding:13px 14px;
   }
@@ -59,11 +60,20 @@ window.MockBar = (function () {
       .map(k => '<option value="' + k + '"' + (k === opt.role ? ' selected' : '') + '>' +
                 Shell.ROLES[k].label + '</option>').join('');
 
-    const toggles = (opt.toggles || []).map(t =>
-      '<label class="mockbar-tg"><input type="checkbox" data-tg="' + t.key + '"' +
-      (t.value ? ' checked' : '') + '><i></i><span>' + t.label + '</span></label>' +
-      (t.note ? '<div class="mockbar-note">' + t.note + '</div>' : '')
-    ).join('');
+    // トグルとセレクトを混在して置ける
+    const controls = (opt.toggles || []).map(t => {
+      if(t.type === 'select'){
+        const os = t.options.map(o =>
+          '<option value="' + o.value + '"' + (String(o.value) === String(t.value) ? ' selected' : '') +
+          '>' + o.label + '</option>').join('');
+        return '<label class="fl" for="mb_' + t.key + '">' + t.label + '</label>' +
+               '<select id="mb_' + t.key + '" data-sel="' + t.key + '">' + os + '</select>' +
+               (t.note ? '<div class="mockbar-note">' + t.note + '</div>' : '');
+      }
+      return '<label class="mockbar-tg"><input type="checkbox" data-tg="' + t.key + '"' +
+             (t.value ? ' checked' : '') + '><i></i><span>' + t.label + '</span></label>' +
+             (t.note ? '<div class="mockbar-note">' + t.note + '</div>' : '');
+    }).join('');
 
     const el = document.createElement('div');
     el.className = 'mockbar';
@@ -75,7 +85,7 @@ window.MockBar = (function () {
         '<label class="fl" for="mbRole">ログイン中のロール</label>' +
         '<select id="mbRole">' + roleOpts + '</select>' +
         '<div class="mockbar-scope" id="mbScope"></div>' +
-        toggles +
+        controls +
       '</div>';
     document.body.appendChild(el);
 
@@ -91,7 +101,13 @@ window.MockBar = (function () {
       opt.onRole(e.target.value);
     });
     (opt.toggles || []).forEach(t => {
-      el.querySelector('[data-tg="' + t.key + '"]').addEventListener('change', e => t.onChange(e.target.checked));
+      if(t.type === 'select'){
+        el.querySelector('[data-sel="' + t.key + '"]')
+          .addEventListener('change', e => t.onChange(e.target.value));
+      }else{
+        el.querySelector('[data-tg="' + t.key + '"]')
+          .addEventListener('change', e => t.onChange(e.target.checked));
+      }
     });
   }
 

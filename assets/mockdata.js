@@ -8,8 +8,18 @@
 
 window.MockData = (function () {
 
-  /** 店舗（GPS判定の中心。distance_m はサーバーで算出する想定） */
-  const SHOP = { id: 'machida', name: "si'se 町田店", allowedRadiusM: 200 };
+  /**
+    店舗。GPS判定の中心で、distance_m はサーバーで算出する想定。
+    gpsEnabled は店舗ごとの設定（GPS打刻を使わない店舗があるため）。
+    設定場所は 設定 > 管理設定 > 店舗管理 が自然だが、実装時に要確認。
+  */
+  const SHOP = {
+    id: 'machida',
+    name: "si'se 町田店",
+    address: '東京都町田市森野１丁目34-12　シェル都VIII　PLUSビル 103号',
+    allowedRadiusM: 200,
+    gpsEnabled: true,
+  };
 
   /** スタッフ。実装では GET /api/stores/:sid/staff 相当 */
   const STAFF = {
@@ -39,6 +49,25 @@ window.MockData = (function () {
     ];
   }
 
+  /*
+    シフト（shift_assignments 相当）。
+    勤怠側では「予定 vs 実績」の突き合わせと、打刻漏れ修正時の初期値に使う。
+    休日はキーを持たせない（＝シフトなし）。
+  */
+  const SHIFTS = {
+    'miura|2026-08-01': { start: 540, end: 1140 },   //  9:00–19:00
+    'miura|2026-08-02': { start: 570, end: 1140 },   //  9:30–19:00
+    'miura|2026-08-04': { start: 600, end: 1170 },   // 10:00–19:30
+    'miura|2026-08-05': { start: 600, end: 1140 },   // 10:00–19:00
+    'miura|2026-08-07': { start: 600, end: 1140 },   // 10:00–19:00
+    'sato|2026-08-01':  { start: 600, end: 1140 },   // 10:00–19:00
+    'sato|2026-08-02':  { start: 600, end: 1140 },
+    'sato|2026-08-05':  { start: 600, end: 1140 },
+    'sato|2026-08-06':  { start: 600, end: 1140 },
+  };
+  /** その日のシフトを返す。無ければ null */
+  const shiftOf = (staff, date) => SHIFTS[staff + '|' + date] || null;
+
   /* ---- minimo連携枠（/schedule） ---- */
 
   const SCHEDULE_STAFF = [
@@ -63,5 +92,6 @@ window.MockData = (function () {
     ];
   }
 
-  return { SHOP, STAFF, STAFF_ORDER, attendanceDays, SCHEDULE_STAFF, minimoSlots, reservations };
+  return { SHOP, STAFF, STAFF_ORDER, attendanceDays, shiftOf,
+           SCHEDULE_STAFF, minimoSlots, reservations };
 })();

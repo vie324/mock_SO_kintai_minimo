@@ -3,207 +3,246 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SalonOne｜打刻（スタッフ）</title>
+<title>SalonOne｜打刻</title>
 <!--
 ================================================================================
-[打刻] スタッフが出退勤を打刻する画面   → 移植先: /punch
+[打刻] スタッフが出退勤を打刻する  → 移植先: /punch
 ================================================================================
-■ 想定運用
-  店舗の共用PC / スタッフ個人のスマホ、どちらからも同じ画面で打刻する。
-  1ファイルでPC・スマホ両対応（768pxで1カラムへ）。
+■ 現行画面との関係
+  現行は管理シェルの中の中央1カラム。その構造は踏襲したうえで、以下を足している。
+    ・大きな時計＋現在ステータス（未出勤／勤務中／休憩中／退勤済み）
+    ・実働・休憩の途中経過
+    ・今日の打刻タイムライン
+  現行にあって外していないもの：所属店舗＋住所、位置情報エラー時の再取得導線。
 
-■ この画面の要点
-  1. 押せる打刻ボタンだけを有効にする（二重打刻・順序ミスを画面側で防ぐ）
-     ステートマシンは assets/attendance.js の PUNCH_ALLOWED / PUNCH_NEXT が正。
-     ※ 画面の制御は「押させない」ためのもの。サーバー側でも必ず同じ検証をする。
-  2. GPSが範囲外なら全ボタンをロックする
-     完全ブロックか、理由付きで許可して管理者に通知かは未決（メモ §5-12）。
-  3. 実働・休憩の途中経過をその場で出す（休憩中は現在時刻まで加算）
+■ GPSの状態は4通り
+  ok    範囲内。打刻できる
+  far   範囲外。打刻をロック（完全ブロックか理由付き許可かは未決／メモ §5-12）
+  error 位置情報を取得できない（ブラウザで拒否など）。現行と同じ再取得ボタンを出す
+  ―     店舗設定でGPS打刻を使わない場合。カード自体を出さず、常に打刻できる
+
+■ GPS機能のオン/オフ
+  店舗ごとの設定（使わない店舗があるため）。mockdata.js の SHOP.gpsEnabled。
+  設定場所は 設定 > 管理設定 > 店舗管理 が自然だが、実装時に要確認。
+
+■ ステートマシン
+  none ―clock_in→ working ―break_start→ break ―break_end→ working ―clock_out→ done
+  ※ 画面の制御は「押させない」ためのもの。サーバー側でも同じ検証をして
+     連打・二重打刻・順序違反をAPIで弾くこと。
 
 ■ API
   POST /api/punches   { staff_id, type, recorded_at, lat, lng }
-  ・連打・二重打刻はAPI側で弾く
-  ・recorded_at はサーバー時刻を正とする（端末時計は信用しない）
+  recorded_at はサーバー時刻を正とする（端末時計は信用しない）。
 ================================================================================
 -->
 <link rel="stylesheet" href="../assets/tokens.css">
 <link rel="stylesheet" href="../assets/base.css">
+<link rel="stylesheet" href="../assets/shell.css">
 <style>
-.topbar{
-  background:var(--teal); color:#fff; padding:12px 18px;
-  display:flex; align-items:center; gap:12px; position:sticky; top:0; z-index:30;
-}
-.logo{font-family:"Playfair Display",Georgia,serif; font-size:18px; letter-spacing:.04em;}
-.logo b{color:var(--gold);}
-.topbar .who{margin-left:auto; font-size:12px; opacity:.85; text-align:right; line-height:1.4;}
+.punch-col{max-width:520px; margin:0 auto;}
 
-.wrap{max-width:1000px; margin:0 auto; padding:18px 18px 48px;}
-
-/* PCは2カラム、スマホは1カラム */
-.layout{display:grid; grid-template-columns:1.15fr .85fr; gap:14px; align-items:start;}
-
-/* ---------- 時計 ---------- */
-.clockface{text-align:center; padding:10px 0 6px;}
+.clockface{text-align:center; padding:8px 0 4px;}
 .clockface .d{font-size:13px; color:var(--mut);}
-.clockface .t{font-size:56px; font-weight:700; letter-spacing:.02em; line-height:1.05;}
+.clockface .t{font-size:52px; font-weight:700; letter-spacing:.02em; line-height:1.05;}
 .statusline{display:flex; justify-content:center; margin-top:8px;}
 
-/* ---------- 入力 ---------- */
-.field{display:flex; align-items:center; gap:10px; margin-bottom:10px;}
-.field label{font-size:12px; color:var(--mut); width:78px; flex:0 0 auto;}
+.field{margin-bottom:12px;}
+.field label{display:block; font-size:11.5px; color:var(--mut); margin-bottom:5px;}
 .field select{
-  flex:1; height:42px; border:1px solid var(--line); border-radius:10px;
+  width:100%; height:42px; border:1px solid var(--line); border-radius:10px;
   background:#fff; padding:0 10px;
 }
-.gps{
-  display:flex; align-items:flex-start; gap:10px; border-radius:10px; padding:10px 12px;
-  font-size:12.5px; margin-bottom:12px;
-}
+.shopbox{border-top:1px solid var(--line); padding-top:11px; margin-bottom:13px;}
+.shopbox .l{font-size:11.5px; color:var(--mut);}
+.shopbox .n{font-weight:700; font-size:14px; margin-top:2px;}
+.shopbox .a{font-size:11.5px; color:var(--mut); margin-top:2px; line-height:1.5;}
+
+/* GPS */
+.gps{border-radius:10px; padding:11px 13px; font-size:12.5px; margin-bottom:14px;}
 .gps.ok{background:var(--ok-soft); color:#1d6a45;}
 .gps.ng{background:var(--danger-soft); color:var(--danger);}
-.gps .ic{font-weight:700;}
-.gps .re{margin-left:auto; text-decoration:underline; font-size:12px; white-space:nowrap;}
+.gps .hd{display:flex; align-items:center; gap:7px; font-weight:700;}
+.gps .hd svg{width:15px; height:15px; stroke:currentColor; fill:none; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round;}
+.gps .tx{margin-top:4px; line-height:1.55;}
+.gps .act{margin-top:9px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+.gps .retry{
+  height:32px; padding:0 12px; border-radius:8px; font-size:12px; font-weight:600;
+  background:#fff; border:1px solid currentColor;
+}
+.gps .swap{font-size:11px; text-decoration:underline; opacity:.8; margin-left:auto;}
 
-/* ---------- 打刻ボタン ---------- */
+/* 打刻ボタン */
 .punchgrid{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
 .punchbtn{
-  height:88px; border-radius:14px; font-size:18px; font-weight:700;
-  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+  height:82px; border-radius:12px; font-size:16px; font-weight:700;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px;
   border:1.5px solid transparent; transition:transform .06s;
 }
+.punchbtn .ico{display:flex; align-items:center; gap:7px;}
+.punchbtn svg{width:17px; height:17px; stroke:currentColor; fill:none; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round;}
 .punchbtn small{font-size:11px; font-weight:500; opacity:.8;}
 .punchbtn:active:not(:disabled){transform:scale(.985);}
 .punchbtn.pri{background:var(--teal); color:#fff;}
 .punchbtn.sec{background:#fff; border-color:var(--gold); color:var(--teal);}
 .punchbtn.end{background:#fff; border-color:var(--line); color:var(--ink);}
 .punchbtn:disabled{background:#EDEDE7; color:#A9B3B1; border-color:transparent; cursor:not-allowed;}
-.punchbtn:disabled small{opacity:.9;}
 
-/* ---------- タイムライン ---------- */
-.tl{list-style:none; margin:8px 0 0; padding:0;}
-.tl li{
-  display:flex; align-items:center; gap:10px; padding:10px 2px;
-  border-bottom:1px dashed var(--line); font-size:13.5px;
-}
+/* 今日の打刻 */
+.progress{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+.pbox{background:var(--muted-bg); border-radius:10px; padding:10px 12px;}
+.pbox .l{font-size:11.5px; color:var(--mut);}
+.pbox .v{font-size:20px; font-weight:700; margin-top:1px;}
+.tl{list-style:none; margin:10px 0 0; padding:0;}
+.tl li{display:flex; align-items:center; gap:10px; padding:9px 2px; border-bottom:1px dashed var(--line); font-size:13.5px;}
 .tl li:last-child{border-bottom:none;}
-.tl .tt{width:58px; font-weight:700;}
+.tl .tt{width:56px; font-weight:700;}
 .tl .lb{color:var(--mut);}
 .tl .mk{margin-left:auto; font-size:11px; color:var(--mut);}
 .empty{color:var(--mut); font-size:13px; padding:12px 2px;}
 
-.progress{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:4px;}
-.pbox{background:var(--muted-bg); border-radius:10px; padding:10px 12px;}
-.pbox .l{font-size:11.5px; color:var(--mut);}
-.pbox .v{font-size:20px; font-weight:700; margin-top:1px;}
-
 @media (max-width:768px){
-  .layout{grid-template-columns:1fr;}
-  .wrap{padding:12px 12px 40px;}
   .clockface .t{font-size:44px;}
-  .punchbtn{height:78px; font-size:17px;}
-}
-@media (max-width:430px){
-  .clockface .t{font-size:40px;}
+  .punchbtn{height:76px; font-size:15px;}
 }
 </style>
 </head>
 <body>
-
-<div class="topbar">
-  <div class="logo">Salon<b>One</b></div>
-  <div class="who" id="topWho">si'se 町田店<br>打刻</div>
-</div>
-
-<div class="wrap">
-  <div class="card">
-    <div class="clockface">
-      <div class="d" id="pDate">—</div>
-      <div class="t tnum" id="pClock">--:--:--</div>
-      <div class="statusline"><span class="pill none" id="pStatus">未出勤</span></div>
-    </div>
-  </div>
-
-  <div class="layout">
-    <div>
-      <div class="card">
-        <h2>打刻する</h2>
-        <div class="field">
-          <label for="pStaff">スタッフ</label>
-          <select id="pStaff"></select>
-        </div>
-        <div class="gps ok" id="pGps">
-          <span class="ic" id="pGpsIc">✓</span>
-          <span id="pGpsText"></span>
-          <button class="re" id="pGpsToggle">状態を切替</button>
-        </div>
-        <div class="punchgrid">
-          <button class="punchbtn pri" data-type="clock_in">出勤<small>勤務をはじめる</small></button>
-          <button class="punchbtn end" data-type="clock_out">退勤<small>勤務をおわる</small></button>
-          <button class="punchbtn sec" data-type="break_start">休憩開始<small>離席します</small></button>
-          <button class="punchbtn sec" data-type="break_end">休憩戻り<small>勤務にもどる</small></button>
-        </div>
-        <p class="note">押せるボタンだけが有効になります（二重打刻・順序ミスを画面側で防止）。</p>
-      </div>
-    </div>
-
-    <div>
-      <div class="card">
-        <h2>今日の打刻</h2>
-        <div class="progress">
-          <div class="pbox"><div class="l">実働（途中経過）</div><div class="v tnum" id="pWork">—</div></div>
-          <div class="pbox"><div class="l">休憩</div><div class="v tnum" id="pBreak">—</div></div>
-        </div>
-        <ul class="tl" id="pTimeline"></ul>
-      </div>
-    </div>
-  </div>
-</div>
+<div id="shell"></div>
 
 <div class="toast" id="toast" role="status"></div>
 
 <script src="../assets/attendance.js"></script>
 <script src="../assets/mockdata.js"></script>
+<script src="../assets/shell.js"></script>
+<script src="../assets/mockbar.js"></script>
 <script>
 'use strict';
 const A = window.Attendance, M = window.MockData;
-
-/* ---------------- 状態 ----------------
-   移植時は useState 3つ（state / punches / gpsOk）にそのまま対応する */
-let punchState = 'none';   // none | working | break | done
-let punches    = [];       // { type, at(0:00からの分) }
-let gpsOk      = true;
-
 const $ = id => document.getElementById(id);
 const nowMin = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
 
-/* ---------------- スタッフ選択 ---------------- */
-M.STAFF_ORDER.forEach(id => {
-  const o = document.createElement('option');
-  o.value = id; o.textContent = M.STAFF[id].name;
-  $('pStaff').appendChild(o);
-});
-$('pStaff').value = 'sato';
-$('topWho').innerHTML = M.SHOP.name + '<br>打刻';
+/* ---------------- 状態（移植時は useState 4つ） ---------------- */
+let role       = 'system';
+let punchState = 'none';        // none | working | break | done
+let punches    = [];            // { type, at }
+let gps        = 'ok';          // ok | far | error
+let gpsEnabled = M.SHOP.gpsEnabled;
+let clockTimer = null, progTimer = null;
+
+const GPS_TEXT = {
+  ok:    { cls:'ok', title:'店舗の範囲内です',
+           tx:'店舗から 38m（許可範囲 ' + M.SHOP.allowedRadiusM + 'm）', retry:false },
+  far:   { cls:'ng', title:'店舗の範囲外です',
+           tx:'店舗から 1,240m。店舗に着いてから打刻してください。', retry:false },
+  error: { cls:'ng', title:'位置情報エラー',
+           tx:'位置情報の利用が拒否されています。ブラウザの設定で許可してください。', retry:true },
+};
+/** 打刻できる位置状態か（GPS未使用の店舗は常にtrue） */
+const posOk = () => !gpsEnabled || gps === 'ok';
+
+const SVG = {
+  pin:'<svg viewBox="0 0 24 24"><path d="M12 21s7-6.3 7-11a7 7 0 1 0-14 0c0 4.7 7 11 7 11z"/><circle cx="12" cy="10" r="2.6"/></svg>',
+  in: '<svg viewBox="0 0 24 24"><path d="M14 4h-8v16h8M10 12h10M17 8l3.5 4-3.5 4"/></svg>',
+  out:'<svg viewBox="0 0 24 24"><path d="M10 4h8v16h-8M14 12H4M7 8l-3.5 4L7 16"/></svg>',
+  cup:'<svg viewBox="0 0 24 24"><path d="M4 8h13v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4zM17 9.5h1.5a2.5 2.5 0 0 1 0 5H17M5 4.5v1M9 3.5v2M13 4.5v1"/></svg>',
+  play:'<svg viewBox="0 0 24 24"><path d="M8 5.5l11 6.5-11 6.5z"/></svg>',
+  stamp:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>',
+};
+
+/* ---------------- ページ描画 ---------------- */
+const PAGE =
+  '<div class="pagehead"><span class="ic">' + SVG.stamp + '</span><h1>打刻</h1></div>' +
+  '<div class="punch-col">' +
+    '<div class="card"><div class="clockface">' +
+      '<div class="d" id="pDate">—</div>' +
+      '<div class="t tnum" id="pClock">--:--:--</div>' +
+      '<div class="statusline"><span class="pill none" id="pStatus">未出勤</span></div>' +
+    '</div></div>' +
+
+    '<div class="card">' +
+      '<div class="field"><label for="pStaff">スタッフ</label><select id="pStaff"></select></div>' +
+      '<div class="shopbox">' +
+        '<div class="l">所属店舗</div>' +
+        '<div class="n">' + M.SHOP.name + '</div>' +
+        '<div class="a">' + M.SHOP.address + '</div>' +
+      '</div>' +
+      '<div id="gpsSlot"></div>' +
+      '<div class="punchgrid">' +
+        '<button class="punchbtn pri" data-type="clock_in"><span class="ico">' + SVG.in + '出勤</span><small>勤務をはじめる</small></button>' +
+        '<button class="punchbtn end" data-type="clock_out"><span class="ico">' + SVG.out + '退勤</span><small>勤務をおわる</small></button>' +
+        '<button class="punchbtn sec" data-type="break_start"><span class="ico">' + SVG.cup + '休憩開始</span><small>離席します</small></button>' +
+        '<button class="punchbtn sec" data-type="break_end"><span class="ico">' + SVG.play + '休憩戻り</span><small>勤務にもどる</small></button>' +
+      '</div>' +
+      '<p class="note">押せるボタンだけが有効になります（二重打刻・順序ミスを画面側で防止）。</p>' +
+    '</div>' +
+
+    '<div class="card">' +
+      '<h2>今日の打刻</h2>' +
+      '<div class="progress">' +
+        '<div class="pbox"><div class="l">実働（途中経過）</div><div class="v tnum" id="pWork">—</div></div>' +
+        '<div class="pbox"><div class="l">休憩</div><div class="v tnum" id="pBreak">—</div></div>' +
+      '</div>' +
+      '<ul class="tl" id="pTimeline"></ul>' +
+    '</div>' +
+  '</div>';
+
+function mount(r){
+  role = r;
+  const page = Shell.render({ active:'punch', role: role });
+  page.innerHTML = PAGE;
+
+  const sel = $('pStaff');
+  M.STAFF_ORDER.forEach(id => {
+    const o = document.createElement('option');
+    o.value = id; o.textContent = M.STAFF[id].name;
+    sel.appendChild(o);
+  });
+  sel.value = 'sato';
+  sel.addEventListener('change', () => {
+    punchState = 'none'; punches = [];
+    render();
+    toast('スタッフを切り替えました');
+  });
+
+  document.querySelectorAll('.punchbtn').forEach(b => {
+    b.addEventListener('click', () => {
+      const type = b.dataset.type;
+      if(!A.canPunch(punchState, type) || !posOk()) return;   // 二重防御
+      const at = nowMin();
+      punches.push({ type: type, at: at });
+      punchState = A.PUNCH_NEXT[type];
+      render();
+      toast(A.PUNCH_LABEL[type] + 'を記録しました（' + A.toStr(at) + '）');
+    });
+  });
+
+  tickClock();
+  clearInterval(clockTimer); clockTimer = setInterval(tickClock, 1000);
+  clearInterval(progTimer);
+  progTimer = setInterval(() => { if(punchState === 'working' || punchState === 'break') render(); }, 30000);
+
+  render();
+}
 
 /* ---------------- 時計 ---------------- */
 function tickClock(){
   const d = new Date();
-  $('pClock').textContent = A.pad(d.getHours()) + ':' + A.pad(d.getMinutes()) + ':' + A.pad(d.getSeconds());
+  const c = $('pClock'); if(!c) return;
+  c.textContent = A.pad(d.getHours()) + ':' + A.pad(d.getMinutes()) + ':' + A.pad(d.getSeconds());
   $('pDate').textContent =
     d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日(' + A.DOW[d.getDay()] + ')';
 }
-tickClock();
-setInterval(tickClock, 1000);
-setInterval(() => { if(punchState === 'working' || punchState === 'break') render(); }, 30000);
 
-/* ---------------- 描画 ---------------- */
+/* ---------------- 再描画 ---------------- */
 function render(){
   const st = $('pStatus');
   st.className = 'pill ' + punchState;
   st.textContent = A.PUNCH_STATUS[punchState];
 
+  renderGps();
+
   document.querySelectorAll('.punchbtn').forEach(b => {
-    b.disabled = !A.canPunch(punchState, b.dataset.type) || !gpsOk;
+    b.disabled = !A.canPunch(punchState, b.dataset.type) || !posOk();
   });
 
   const tl = $('pTimeline');
@@ -216,7 +255,7 @@ function render(){
       li.innerHTML =
         '<span class="tt tnum">' + A.toStr(p.at) + '</span>' +
         '<span class="lb">' + A.PUNCH_LABEL[p.type] + '</span>' +
-        '<span class="mk">GPS確認済み</span>';
+        '<span class="mk">' + (gpsEnabled ? 'GPS確認済み' : '打刻のみ') + '</span>';
       tl.appendChild(li);
     });
   }
@@ -226,35 +265,34 @@ function render(){
   $('pBreak').textContent = punches.length ? A.fmtJa(pr.brk) : '—';
 }
 
-/* ---------------- 打刻 ---------------- */
-document.querySelectorAll('.punchbtn').forEach(b => {
-  b.addEventListener('click', () => {
-    const type = b.dataset.type;
-    if(!A.canPunch(punchState, type) || !gpsOk) return;   // 二重防御
-    const at = nowMin();
-    punches.push({ type: type, at: at });
-    punchState = A.PUNCH_NEXT[type];
-    render();
-    toast(A.PUNCH_LABEL[type] + 'を記録しました（' + A.toStr(at) + '）');
-  });
-});
-
-/* ---------------- GPS（モックは手動トグル） ---------------- */
-$('pGpsToggle').addEventListener('click', () => { gpsOk = !gpsOk; renderGps(); render(); });
 function renderGps(){
-  $('pGps').className = 'gps ' + (gpsOk ? 'ok' : 'ng');
-  $('pGpsIc').textContent = gpsOk ? '✓' : '！';
-  $('pGpsText').textContent = gpsOk
-    ? '店舗の範囲内です（店舗から 38m / 許可範囲 ' + M.SHOP.allowedRadiusM + 'm）'
-    : '店舗の範囲外です（店舗から 1,240m）。店舗に着いてから打刻してください。';
-}
+  const slot = $('gpsSlot');
+  if(!gpsEnabled){
+    // GPS打刻を使わない店舗：カードごと出さない
+    slot.innerHTML = '<p class="note" style="margin-bottom:12px">この店舗はGPSによる打刻位置の確認を使用しない設定です。</p>';
+    return;
+  }
+  const g = GPS_TEXT[gps];
+  slot.innerHTML =
+    '<div class="gps ' + g.cls + '">' +
+      '<div class="hd">' + SVG.pin + g.title + '</div>' +
+      '<div class="tx">' + g.tx + '</div>' +
+      '<div class="act">' +
+        (g.retry ? '<button class="retry" id="gpsRetry">位置情報を再取得</button>' : '') +
+        '<button class="swap" id="gpsSwap">状態を切替（モック）</button>' +
+      '</div>' +
+    '</div>';
 
-/* ---------------- スタッフ切替 ---------------- */
-$('pStaff').addEventListener('change', () => {
-  punchState = 'none'; punches = [];
-  render();
-  toast('スタッフを切り替えました');
-});
+  const rt = $('gpsRetry');
+  if(rt) rt.addEventListener('click', () => {
+    gps = 'ok'; render();
+    toast('位置情報を取得しました');
+  });
+  $('gpsSwap').addEventListener('click', () => {
+    gps = gps === 'ok' ? 'far' : gps === 'far' ? 'error' : 'ok';
+    render();
+  });
+}
 
 /* ---------------- トースト ---------------- */
 let toastT;
@@ -266,8 +304,17 @@ function toast(msg){
   toastT = setTimeout(() => t.classList.remove('show'), 2600);
 }
 
-renderGps();
-render();
+/* ---------------- 起動 ---------------- */
+mount('system');
+MockBar.init({
+  role: 'system',
+  onRole: r => mount(r),
+  toggles: [{
+    key:'gps', label:'この店舗でGPS打刻を使う', value: gpsEnabled,
+    onChange: v => { gpsEnabled = v; render(); },
+    note:'店舗ごとの設定。OFFにするとGPSカードが消え、位置に関係なく打刻できます。',
+  }],
+});
 </script>
 </body>
 </html>

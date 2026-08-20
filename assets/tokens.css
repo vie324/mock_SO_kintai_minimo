@@ -1,0 +1,42 @@
+/* ============================================================================
+   SalonOne デザイントークン
+   ----------------------------------------------------------------------------
+   ここは「値の定義だけ」を置く。レイアウトやコンポーネントの見た目は base.css へ。
+   Next.js 移植時は、この1ファイルが tailwind.config.js の theme.extend に
+   1対1で対応する。既存トークン名がある場合はそちらに合わせて読み替えること。
+
+     --teal      #003737  brand-sub    サイドバー・主要ボタン
+     --teal-3    #106258  focus/link   フォーカスリング・リンク
+     --gold      #C6A664  brand        アクセント・トグル・枠線
+     --cream     #F4F4EF  base-bg      画面の地色
+     --paper     #FFFFFF  surface      カード背景
+     --line      #E4E4DC  border       ボーダー
+     --mut       #6E7B78  text-muted   補助テキスト
+     --pink      #F43F5E  minimo       minimo連携枠
+     --ok/warn/danger      状態色（成功・注意・エラー）
+   ========================================================================== */
+:root{
+  /* ブランド */
+  --teal:#003737;  --teal-2:#0B4A45;  --teal-3:#106258;
+  --gold:#C6A664;  --gold-soft:#F3E9D5;
+
+  /* 面・線・文字 */
+  --cream:#F4F4EF; --paper:#FFFFFF;   --muted-bg:#F5F5F0;
+  --ink:#22312F;   --mut:#6E7B78;     --line:#E4E4DC;
+
+  /* 状態色（-soft は背景用の淡色） */
+  --ok:#2E8B5F;     --ok-soft:#E7F4EC;
+  --warn:#B4740B;   --warn-soft:#FBF0DC;
+  --danger:#C4342B; --danger-soft:#FBEBEA;
+  --info:#2F6DA8;   --info-soft:#E9F1F9;
+
+  /* minimo連携枠 */
+  --pink:#F43F5E;   --pink-soft:rgba(244,63,94,.13);
+
+  /* かたち */
+  --r-sm:8px; --r:12px; --r-lg:16px;
+
+  /* 文字 */
+  --font:"Hiragino Kaku Gothic ProN","Hiragino Sans","Noto Sans JP",
+         "Yu Gothic UI","Yu Gothic",Meiryo,sans-serif;
+}

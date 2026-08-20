@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SalonOne 改善モック｜5画面一覧</title>
+<!--
+================================================================================
+モック一覧ページ
+  各画面を「実寸の幅」のiframeで読み込み、CSS transform で縮小して並べている。
+  ＝ 縮小されているだけで、中身は実際のブレークポイントで描画されたもの。
+  カード右上の「開く」で実寸表示に移動する。
+================================================================================
+-->
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/base.css">
+<style>
+body{background:var(--cream);}
+.top{background:var(--teal); color:#fff; padding:20px 24px;}
+.top .logo{font-family:"Playfair Display",Georgia,serif; font-size:22px; letter-spacing:.04em;}
+.top .logo b{color:var(--gold);}
+.top p{margin:6px 0 0; font-size:13px; opacity:.82; max-width:760px; line-height:1.6;}
+
+.wrap{max-width:1400px; margin:0 auto; padding:22px 24px 60px;}
+
+.sec{margin-bottom:30px;}
+.sec > h2{
+  font-size:14px; margin:0 0 4px; letter-spacing:.06em; color:var(--teal);
+  display:flex; align-items:baseline; gap:10px;
+}
+.sec > h2 .cnt{font-size:11.5px; color:var(--mut); font-weight:500; letter-spacing:0;}
+.sec > .lead{font-size:12.5px; color:var(--mut); margin:0 0 14px;}
+
+.row{display:flex; flex-wrap:wrap; gap:18px; align-items:flex-start;}
+
+.shot{
+  background:var(--paper); border:1px solid var(--line); border-radius:var(--r);
+  overflow:hidden; display:flex; flex-direction:column;
+}
+.shot .bar{
+  display:flex; align-items:center; gap:8px; padding:10px 12px;
+  border-bottom:1px solid var(--line); background:#FAFAF6;
+}
+.shot .bar .nm{font-weight:700; font-size:13px;}
+.shot .bar .px{font-size:11px; color:var(--mut); font-variant-numeric:tabular-nums;}
+.shot .bar .open{
+  margin-left:auto; font-size:11.5px; font-weight:600; color:var(--teal-3);
+  text-decoration:none; border:1px solid var(--line); border-radius:7px; padding:3px 9px;
+  background:#fff; white-space:nowrap;
+}
+.shot .bar .open:hover{border-color:var(--teal-3);}
+.shot .path{
+  font-size:11px; color:var(--mut); padding:6px 12px 0; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+.shot .desc{font-size:11.5px; color:var(--mut); padding:4px 12px 10px; line-height:1.5;}
+
+/* iframe を実寸で読み、transform で縮小する */
+.view{position:relative; overflow:hidden; background:#E7E7E0; border-top:1px solid var(--line);}
+.view iframe{border:0; display:block; transform-origin:0 0;}
+
+/* PC: 1280×900 を 0.5倍 → 640×450 */
+.view.pc{width:640px; height:450px;}
+.view.pc iframe{width:1280px; height:900px; transform:scale(.5);}
+/* SP: 390×844 を 0.62倍 → 242×523 */
+.view.sp{width:242px; height:523px;}
+.view.sp iframe{width:390px; height:844px; transform:scale(.62);}
+
+.legend{
+  background:var(--paper); border:1px solid var(--line); border-radius:var(--r);
+  padding:14px 16px; font-size:12.5px; color:var(--mut); line-height:1.7;
+}
+.legend b{color:var(--ink);}
+.legend code{
+  background:var(--muted-bg); border-radius:5px; padding:1px 6px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11.5px; color:var(--ink);
+}
+.legend ul{margin:8px 0 0; padding-left:18px;}
+.legend li{margin-bottom:4px;}
+
+@media (max-width:700px){
+  .wrap{padding:16px 12px 40px;}
+  .view.pc{width:340px; height:239px;}
+  .view.pc iframe{transform:scale(.2656);}
+}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="logo">Salon<b>One</b> 改善モック</div>
+  <p>勤怠管理（PC／スマホ・管理者／打刻者の4画面）と、minimo連携枠のスマホ操作（1画面）の計5画面。
+     素のHTML＋CSS＋JSで、ビルドも依存ライブラリもなし。下のプレビューは実寸幅で描画したものを縮小しています。</p>
+</div>
+
+<div class="wrap">
+
+  <section class="sec">
+    <h2>勤怠管理（管理者）<span class="cnt">2画面 — PC / スマホ</span></h2>
+    <p class="lead">月次の打刻実績を確認・修正・承認する。1ファイルで両対応（1024pxでサイドバー格納、768pxで表→カード）。</p>
+    <div class="row">
+      <div class="shot">
+        <div class="bar"><span class="nm">管理者・PC</span><span class="px">1280px</span>
+          <a class="open" href="screens/kintai_admin.html" target="_blank" rel="noopener">開く</a></div>
+        <div class="path">/time-tracking</div>
+        <div class="desc">サイドバー＋KPI5枚＋スタッフ別テーブル。打刻漏れは行ごと赤地。</div>
+        <div class="view pc"><iframe src="screens/kintai_admin.html" title="勤怠管理 管理者 PC"></iframe></div>
+      </div>
+      <div class="shot">
+        <div class="bar"><span class="nm">管理者・スマホ</span><span class="px">390px</span>
+          <a class="open" href="screens/kintai_admin.html" target="_blank" rel="noopener">開く</a></div>
+        <div class="path">/time-tracking</div>
+        <div class="desc">表を捨ててカードへ。横スクロールなし。</div>
+        <div class="view sp"><iframe src="screens/kintai_admin.html" title="勤怠管理 管理者 スマホ"></iframe></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>打刻（スタッフ）<span class="cnt">2画面 — PC / スマホ</span></h2>
+    <p class="lead">出退勤を打刻する。店舗の共用PCからもスタッフのスマホからも同じ画面を使う。</p>
+    <div class="row">
+      <div class="shot">
+        <div class="bar"><span class="nm">打刻者・PC</span><span class="px">1280px</span>
+          <a class="open" href="screens/kintai_punch.html" target="_blank" rel="noopener">開く</a></div>
+        <div class="path">/punch</div>
+        <div class="desc">左に打刻ボタン、右に今日のタイムライン。押せるボタンだけ有効。</div>
+        <div class="view pc"><iframe src="screens/kintai_punch.html" title="打刻 PC"></iframe></div>
+      </div>
+      <div class="shot">
+        <div class="bar"><span class="nm">打刻者・スマホ</span><span class="px">390px</span>
+          <a class="open" href="screens/kintai_punch.html" target="_blank" rel="noopener">開く</a></div>
+        <div class="path">/punch</div>
+        <div class="desc">1カラム。GPS範囲外なら全ボタンをロック。</div>
+        <div class="view sp"><iframe src="screens/kintai_punch.html" title="打刻 スマホ"></iframe></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>minimo連携枠（スマホ）<span class="cnt">1画面</span></h2>
+    <p class="lead">予約表のピンクの枠を、タップ→ドラッグで移動・伸縮できるようにする。スマホ専用。</p>
+    <div class="row">
+      <div class="shot">
+        <div class="bar"><span class="nm">minimo連携枠・スマホ</span><span class="px">390px</span>
+          <a class="open" href="screens/minimo_slots.html" target="_blank" rel="noopener">開く</a></div>
+        <div class="path">/schedule</div>
+        <div class="desc">タップで編集、ドラッグで移動、ハンドルで伸縮、長押しで新規。重複は赤で保存不可。</div>
+        <div class="view sp"><iframe src="screens/minimo_slots.html" title="minimo連携枠 スマホ"></iframe></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="legend">
+    <b>ファイル構成</b>
+    <ul>
+      <li><code>screens/</code> … 3ファイル。勤怠の管理者／打刻者はそれぞれ1ファイルでPC・スマホ両対応（＝画面としては4つ）</li>
+      <li><code>assets/tokens.css</code> … 色などのCSS変数だけ。<code>tailwind.config</code> の theme に1対1で対応する</li>
+      <li><code>assets/base.css</code> … リセットと共通パーツ（ボタン・カード・タグ・モーダル・トースト）</li>
+      <li><code>assets/attendance.js</code> … DOMに触らない純粋関数。移植先は <code>utils/attendance.ts</code></li>
+      <li><code>assets/mockdata.js</code> … ダミーデータ。移植時はAPIレスポンスに置き換わる</li>
+    </ul>
+    <div style="margin-top:10px">
+      仕様・データモデル案・API案・未決事項は <a href="claude_code_handoff.md" style="color:var(--teal-3)">claude_code_handoff.md</a> にまとめてあります。
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

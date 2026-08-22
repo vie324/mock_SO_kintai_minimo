@@ -52,6 +52,7 @@ assets/
   logo-mark.png               S1マークのみ（折りたたみ時用）
 docs/
   kintai_faq.md               勤怠管理の想定Q&A（クライアント向け・46問）
+  _build/                     上のmdから閲覧用HTMLを生成するスクリプト
 claude_code_handoff.md        仕様・データモデル案・API案・未決事項
 ```
 
@@ -62,6 +63,15 @@ claude_code_handoff.md        仕様・データモデル案・API案・未決�
 回答には ✅ 対応済み／🔶 仕様未確定／❌ 非対応 の印が付いています。
 **🔶 の質問にその場で答えないでください** — あとで仕様が変わると約束違反になります。
 末尾に未確定項目の一覧があります。
+
+閲覧用のHTMLは md から生成します（**md が唯一の情報源**です）。
+
+```bash
+python3 docs/_build/build_faq_html.py   # → docs/_build/kintai_faq.html
+```
+
+検索と状態での絞り込みが付いているので、商談中に「🔶 だけ表示」して確認できます。
+md を直したら生成し直してください。
 
 ### 現行画面に合わせた部分
 

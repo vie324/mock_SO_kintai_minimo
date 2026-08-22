@@ -1,0 +1,293 @@
+<title>SalonOne 勤怠Q&A</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Old+Mincho:wght@600;700&display=swap">
+<style>
+/* ── トークン: 明るいテーマを完全定義（SalonOneのプロダクトトークンに合わせる） ── */
+:root{
+  --ground:#F4F4EF; --surface:#FFFFFF; --surface-2:#FAFAF6;
+  --ink:#22312F; --mut:#6E7B78; --line:#E4E4DC; --line-2:#EFEFE8;
+  --teal:#003737; --teal-3:#106258; --gold:#C6A664; --gold-soft:#F3E9D5;
+  --ok:#2E8B5F;     --ok-bg:#E7F4EC;
+  --warn:#B4740B;   --warn-bg:#FBF0DC;
+  --danger:#C4342B; --danger-bg:#FBEBEA;
+  --shadow:0 1px 2px rgba(34,49,47,.05), 0 8px 24px rgba(34,49,47,.05);
+  --display:"Zen Old Mincho", "Hiragino Mincho ProN", "Yu Mincho", serif;
+  --body:"Hiragino Kaku Gothic ProN","Hiragino Sans","Noto Sans JP","Yu Gothic UI","Yu Gothic",Meiryo,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#101A18; --surface:#182523; --surface-2:#1E2C2A;
+    --ink:#E7ECEA; --mut:#94A5A1; --line:#2C3D3A; --line-2:#243330;
+    --teal:#8FD3C2; --teal-3:#5FB9A4; --gold:#D8BC80; --gold-soft:#2C2A21;
+    --ok:#6FCB99;     --ok-bg:#14322A;
+    --warn:#E0AE5B;   --warn-bg:#332818;
+    --danger:#EE8A80; --danger-bg:#38201E;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.25);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#101A18; --surface:#182523; --surface-2:#1E2C2A;
+  --ink:#E7ECEA; --mut:#94A5A1; --line:#2C3D3A; --line-2:#243330;
+  --teal:#8FD3C2; --teal-3:#5FB9A4; --gold:#D8BC80; --gold-soft:#2C2A21;
+  --ok:#6FCB99;     --ok-bg:#14322A;
+  --warn:#E0AE5B;   --warn-bg:#332818;
+  --danger:#EE8A80; --danger-bg:#38201E;
+  --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.25);
+}
+
+*{box-sizing:border-box;}
+body{
+  margin:0; background:var(--ground); color:var(--ink);
+  font-family:var(--body); font-size:15px; line-height:1.75;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:var(--teal-3);}
+code{font-family:var(--mono); font-size:.86em; background:var(--surface-2);
+  border:1px solid var(--line-2); border-radius:4px; padding:.08em .38em;}
+:focus-visible{outline:2px solid var(--teal-3); outline-offset:2px; border-radius:4px;}
+
+/* ── ヘッダー ── */
+.top{border-bottom:1px solid var(--line); background:var(--surface);}
+.top-in{max-width:1180px; margin:0 auto; padding:34px 28px 26px;}
+.eyebrow{
+  display:flex; align-items:center; gap:10px;
+  font-size:11.5px; font-weight:700; letter-spacing:.16em; color:var(--gold); margin-bottom:12px;
+}
+.eyebrow::after{content:''; flex:1; height:1px; background:var(--gold); opacity:.4;}
+h1{
+  font-family:var(--display); font-size:clamp(28px,4.4vw,40px); font-weight:700;
+  margin:0 0 10px; letter-spacing:.02em; text-wrap:balance; color:var(--ink);
+}
+.lede{max-width:62ch; color:var(--mut); font-size:14.5px; margin:0;}
+.lede p{margin:0 0 .5em;}
+
+.stats{display:flex; flex-wrap:wrap; gap:10px; margin:22px 0 0;}
+.stat{
+  flex:1 1 150px; background:var(--surface-2); border:1px solid var(--line);
+  border-radius:10px; padding:11px 14px; display:flex; align-items:baseline; gap:9px;
+}
+.stat .v{font-size:24px; font-weight:700; font-variant-numeric:tabular-nums; line-height:1;}
+.stat .l{font-size:12px; color:var(--mut);}
+.stat.ok .v{color:var(--ok);} .stat.tbd .v{color:var(--warn);} .stat.no .v{color:var(--danger);}
+
+.caution{
+  margin:20px 0 0; border:1px solid var(--warn); background:var(--warn-bg);
+  border-radius:10px; padding:13px 16px; font-size:13.5px; color:var(--ink);
+  display:flex; gap:11px; align-items:flex-start;
+}
+.caution b{color:var(--warn);}
+.caution .ic{font-size:16px; line-height:1.3;}
+
+/* ── 本体レイアウト ── */
+.shell{max-width:1180px; margin:0 auto; padding:26px 28px 80px;
+  display:grid; grid-template-columns:236px 1fr; gap:34px; align-items:start;}
+/* グリッド/フレックスの子は既定が min-width:auto で、内容の最小幅より縮まない。
+   これを外さないと狭い画面で列ごとはみ出して横スクロールが出る */
+.shell > *{min-width:0;}
+
+.rail{position:sticky; top:20px; display:flex; flex-direction:column; gap:18px; min-width:0;}
+.rail-b{background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:14px; min-width:0;}
+.rail-t{font-size:10.5px; font-weight:700; letter-spacing:.13em; color:var(--mut); margin:0 0 9px;}
+#q{
+  width:100%; min-width:0; height:38px; border:1px solid var(--line); border-radius:9px;
+  background:var(--surface-2); color:var(--ink); font:inherit; font-size:13.5px; padding:0 11px;
+}
+#q::placeholder{color:var(--mut);}
+.filters{display:flex; flex-direction:column; gap:5px;}
+.fbtn{
+  display:flex; align-items:center; gap:8px; width:100%; text-align:left;
+  border:1px solid transparent; background:none; border-radius:8px; padding:7px 9px;
+  font:inherit; font-size:13px; color:var(--ink); cursor:pointer;
+}
+.fbtn:hover{background:var(--surface-2);}
+.fbtn[aria-pressed="true"]{background:var(--surface-2); border-color:var(--line);
+  font-weight:700; box-shadow:inset 3px 0 0 var(--gold);}
+.fbtn .c{margin-left:auto; font-size:11.5px; color:var(--mut); font-variant-numeric:tabular-nums;}
+.dot{width:8px; height:8px; border-radius:50%; flex:0 0 auto;}
+.dot.ok{background:var(--ok);} .dot.tbd{background:var(--warn);} .dot.no{background:var(--danger);}
+.dot.all{background:var(--mut);}
+
+.nav{display:flex; flex-direction:column;}
+.nav a{
+  display:flex; gap:9px; align-items:baseline; padding:6px 9px; border-radius:8px;
+  color:var(--mut); text-decoration:none; font-size:13px; line-height:1.45;
+}
+.nav a:hover{background:var(--surface-2); color:var(--ink);}
+.nav a.on{color:var(--ink); font-weight:700; background:var(--surface-2); box-shadow:inset 3px 0 0 var(--teal-3);}
+.nav a .n{font-family:var(--mono); font-size:11px; color:var(--gold); flex:0 0 auto;}
+
+/* ── セクション ── */
+main{min-width:0;}
+section{margin-bottom:44px; scroll-margin-top:16px;}
+.sh{display:flex; align-items:baseline; gap:12px; margin-bottom:12px;
+  padding-bottom:11px; border-bottom:2px solid var(--line);}
+.snum{font-family:var(--mono); font-size:12px; font-weight:700; color:var(--gold);
+  border:1px solid var(--gold); border-radius:5px; padding:2px 7px; flex:0 0 auto;}
+.sh h2{font-family:var(--display); font-size:21px; font-weight:700; margin:0; letter-spacing:.02em;}
+section > p{color:var(--mut); font-size:14px; margin:0 0 14px; max-width:64ch;}
+.subh{font-family:var(--display); font-size:16px; font-weight:700; margin:24px 0 10px;
+  padding-top:16px; border-top:1px solid var(--line);}
+
+.qs{display:flex; flex-direction:column; gap:11px;}
+.qa{
+  background:var(--surface); border:1px solid var(--line); border-radius:11px;
+  padding:15px 17px 15px 19px; box-shadow:var(--shadow); position:relative; overflow:hidden;
+}
+.qa::before{content:''; position:absolute; left:0; top:0; bottom:0; width:4px;}
+.qa[data-st="ok"]::before{background:var(--ok);}
+.qa[data-st="tbd"]::before{background:var(--warn);}
+.qa[data-st="no"]::before{background:var(--danger);}
+.qa[data-st="tbd"]{background:linear-gradient(90deg,var(--warn-bg) 0 3px,var(--surface) 3px);}
+.qh{display:flex; align-items:flex-start; gap:10px; flex-wrap:wrap; margin-bottom:9px;}
+.qid{font-family:var(--mono); font-size:11.5px; font-weight:700; color:var(--mut);
+  padding-top:3px; flex:0 0 auto; font-variant-numeric:tabular-nums;}
+.qh h3{font-size:15.5px; font-weight:700; margin:0; line-height:1.55; flex:1 1 260px; text-wrap:balance;}
+.chip{font-size:11px; font-weight:700; border-radius:999px; padding:3px 10px;
+  white-space:nowrap; flex:0 0 auto; border:1px solid transparent;}
+.chip.ok{background:var(--ok-bg); color:var(--ok); border-color:var(--ok);}
+.chip.tbd{background:var(--warn-bg); color:var(--warn); border-color:var(--warn);}
+.chip.no{background:var(--danger-bg); color:var(--danger); border-color:var(--danger);}
+.qb{font-size:14px;}
+.qb > :first-child{margin-top:0;} .qb > :last-child{margin-bottom:0;}
+.qb p{margin:0 0 .8em; max-width:66ch;}
+.qb ul,.qb ol{margin:.4em 0 .8em; padding-left:1.3em;}
+.qb li{margin-bottom:.25em;}
+.qb blockquote{margin:.8em 0; padding:10px 14px; border-left:3px solid var(--gold);
+  background:var(--gold-soft); border-radius:0 8px 8px 0; font-size:13.5px;}
+
+.tw{overflow-x:auto; margin:.6em 0 .9em; border:1px solid var(--line); border-radius:9px;}
+table{border-collapse:collapse; width:100%; font-size:13px; min-width:380px;}
+th,td{padding:8px 12px; text-align:left; border-bottom:1px solid var(--line-2);
+  vertical-align:top; font-variant-numeric:tabular-nums;}
+th{background:var(--surface-2); font-size:11.5px; color:var(--mut); font-weight:700;
+  letter-spacing:.04em; white-space:nowrap;}
+tbody tr:last-child td{border-bottom:none;}
+
+.empty{display:none; color:var(--mut); font-size:14px; padding:30px 4px; text-align:center;}
+.empty.show{display:block;}
+
+@media (max-width:900px){
+  .shell{grid-template-columns:1fr; gap:20px; padding:20px 18px 60px;}
+  .rail{position:static; flex-direction:row; flex-wrap:wrap;}
+  .rail-b{flex:1 1 240px;}
+  .qb table{min-width:0;}
+  .rail-b.nav-b{display:none;}
+  .top-in{padding:26px 18px 22px;}
+  .filters{flex-direction:row; flex-wrap:wrap;}
+  .fbtn{width:auto;}
+  .fbtn .c{margin-left:4px;}
+}
+@media (max-width:560px){
+  /* スマホでは横並びにすると各ボックスが潰れるので積む */
+  .rail{flex-direction:column;}
+  .rail-b{flex:1 1 auto;}
+  .stat{flex:1 1 calc(50% - 5px);}
+  table{min-width:0;}
+}
+</style>
+
+<header class="top">
+  <div class="top-in">
+    <div class="eyebrow">SALONONE ／ 想定Q&amp;A</div>
+    <h1>勤怠管理</h1>
+    <div class="lede">{{INTRO}}</div>
+    <div class="stats">
+      <div class="stat"><span class="v">{{TOTAL}}</span><span class="l">設問</span></div>
+      <div class="stat ok"><span class="v">{{OK}}</span><span class="l">対応済み ✅</span></div>
+      <div class="stat tbd"><span class="v">{{TBD}}</span><span class="l">仕様未確定 🔶</span></div>
+      <div class="stat no"><span class="v">{{NO}}</span><span class="l">非対応 ❌</span></div>
+    </div>
+    <div class="caution">
+      <span class="ic">🔶</span>
+      <div><b>この印の質問にはその場で答えないでください。</b>
+      仕様が未確定のため、いま答えるとあとで約束違反になります。
+      「確認してお戻しします」で止めるのが安全です。</div>
+    </div>
+  </div>
+</header>
+
+<div class="shell">
+  <aside class="rail">
+    <div class="rail-b">
+      <p class="rail-t">絞り込み</p>
+      <input id="q" type="search" placeholder="質問を検索…" aria-label="質問を検索">
+      <div class="filters" style="margin-top:10px" role="group" aria-label="状態で絞り込み">
+        <button class="fbtn" data-f="all" aria-pressed="true"><span class="dot all"></span>すべて<span class="c">{{TOTAL}}</span></button>
+        <button class="fbtn" data-f="ok"  aria-pressed="false"><span class="dot ok"></span>対応済み<span class="c">{{OK}}</span></button>
+        <button class="fbtn" data-f="tbd" aria-pressed="false"><span class="dot tbd"></span>仕様未確定<span class="c">{{TBD}}</span></button>
+        <button class="fbtn" data-f="no"  aria-pressed="false"><span class="dot no"></span>非対応<span class="c">{{NO}}</span></button>
+      </div>
+    </div>
+    <div class="rail-b nav-b">
+      <p class="rail-t">目次</p>
+      <nav class="nav">{{NAV}}</nav>
+    </div>
+    <div class="rail-b">
+      <p class="rail-t">印の意味</p>
+      <div class="lede" style="font-size:12.5px; line-height:1.7">{{USAGE}}</div>
+    </div>
+  </aside>
+
+  <main>
+    {{BODY}}
+    <p class="empty" id="empty">該当する質問がありません。検索語や絞り込みを変えてください。</p>
+  </main>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  var cards = [].slice.call(document.querySelectorAll('.qa'));
+  var secs  = [].slice.call(document.querySelectorAll('main section'));
+  var btns  = [].slice.call(document.querySelectorAll('.fbtn'));
+  var q     = document.getElementById('q');
+  var empty = document.getElementById('empty');
+  var filter = 'all';
+
+  function apply(){
+    var term = q.value.trim().toLowerCase();
+    var shown = 0;
+    cards.forEach(function(c){
+      var okSt = filter === 'all' || c.dataset.st === filter;
+      var okTx = !term || (c.dataset.txt + ' ' + c.textContent).toLowerCase().indexOf(term) > -1;
+      var on = okSt && okTx;
+      c.style.display = on ? '' : 'none';
+      if(on) shown++;
+    });
+    // 中身が全部消えたセクションは見出しごと隠す
+    secs.forEach(function(s){
+      var any = [].slice.call(s.querySelectorAll('.qa')).some(function(c){ return c.style.display !== 'none'; });
+      s.style.display = any ? '' : 'none';
+    });
+    empty.classList.toggle('show', shown === 0);
+  }
+
+  btns.forEach(function(b){
+    b.addEventListener('click', function(){
+      filter = b.dataset.f;
+      btns.forEach(function(x){ x.setAttribute('aria-pressed', String(x === b)); });
+      apply();
+    });
+  });
+  q.addEventListener('input', apply);
+
+  // 目次のスクロール追従
+  var links = {};
+  [].slice.call(document.querySelectorAll('[data-nav]')).forEach(function(a){ links[a.dataset.nav] = a; });
+  if(window.IntersectionObserver){
+    var io = new IntersectionObserver(function(es){
+      es.forEach(function(e){
+        var a = links[e.target.id];
+        if(!a) return;
+        if(e.isIntersecting){
+          Object.keys(links).forEach(function(k){ links[k].classList.remove('on'); });
+          a.classList.add('on');
+        }
+      });
+    }, { rootMargin:'-10% 0px -75% 0px' });
+    secs.forEach(function(s){ io.observe(s); });
+  }
+})();
+</script>

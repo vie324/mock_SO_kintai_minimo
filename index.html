@@ -88,7 +88,8 @@ body{background:var(--cream);}
 
 <div class="top">
   <div class="logo">Salon<b>One</b> 改善モック</div>
-  <p>勤怠管理（PC／スマホ・管理者／打刻者の4画面）と、minimo連携枠のスマホ操作（1画面）の計5画面。
+  <p>勤怠管理（PC／スマホ・管理者／打刻者の4画面）、minimo連携枠のスマホ操作（1画面）、
+     売上ダッシュボード（PC／スマホの2画面）の計7画面。
      素のHTML＋CSS＋JSで、ビルドも依存ライブラリもなし。下のプレビューは実寸幅で描画したものを縮小しています。<br>
      サイドバー・上部バーは現行画面のスクリーンショットに合わせてあります。<br>
      右下の<b>「モック設定」</b>から、ロール／GPSのオンオフ／休憩のオンオフ／固定残業の時間を切り替えて確認できます。</p>
@@ -152,10 +153,32 @@ body{background:var(--cream);}
     </div>
   </section>
 
+  <section class="sec">
+    <h2>売上ダッシュボード<span class="cnt">2画面 — PC / スマホ</span></h2>
+    <p class="lead">期間の売上を確認する。入金ベースと消化ベースを分け、日次推移をグラフで出す。表示項目は店舗ごとに選べる。</p>
+    <div class="row">
+      <div class="shot">
+        <div class="bar"><span class="nm">売上・PC</span><span class="px">1280px</span>
+          <a class="open" href="screens/sales_dashboard.html" target="_blank" rel="noopener">開く</a></div>
+        <div class="path">/sales</div>
+        <div class="desc">総売上＋内訳バー、日次推移グラフ、スタッフ別・日報。右上の「表示項目」で項目を選べます。</div>
+        <div class="view pc"><iframe src="screens/sales_dashboard.html" title="売上ダッシュボード PC"></iframe></div>
+      </div>
+      <div class="shot">
+        <div class="bar"><span class="nm">売上・スマホ</span><span class="px">390px</span>
+          <a class="open" href="screens/sales_dashboard.html" target="_blank" rel="noopener">開く</a></div>
+        <div class="path">/sales</div>
+        <div class="desc">カードは1カラム。表は横スクロール、グラフは幅に合わせて縮みます。</div>
+        <div class="view sp"><iframe src="screens/sales_dashboard.html" title="売上ダッシュボード スマホ"></iframe></div>
+      </div>
+    </div>
+  </section>
+
   <div class="legend">
     <b>ファイル構成</b>
     <ul>
-      <li><code>screens/</code> … 3ファイル。勤怠の管理者／打刻者はそれぞれ1ファイルでPC・スマホ両対応（＝画面としては4つ）</li>
+      <li><code>screens/</code> … 4ファイル。勤怠の管理者／打刻者と売上は、それぞれ1ファイルでPC・スマホ両対応</li>
+      <li><code>assets/salesdata.js</code> … 売上のダミーデータ。日次・スタッフ別の合計は必ず一致するようにしてあります</li>
       <li><code>assets/shell.js</code> / <code>shell.css</code> … サイドバー＋上部バー。移植先は <code>app/(admin)/layout.tsx</code> 相当</li>
       <li><code>assets/tokens.css</code> … 色などのCSS変数だけ。<code>tailwind.config</code> の theme に1対1で対応する</li>
       <li><code>assets/base.css</code> … リセットと共通パーツ（ボタン・カード・タグ・モーダル・トースト）</li>

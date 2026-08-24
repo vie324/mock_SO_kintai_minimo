@@ -52,6 +52,15 @@
 .nav-item.lv2{padding-left:30px; font-size:13px;}
 .nav-item.lv3{padding-left:44px; font-size:13px;}
 
+/* モック用の一覧への導線（製品には存在しない）。ナビとは見た目を分ける */
+.side-index{
+  margin:14px 8px 4px; padding:9px 12px; border-radius:9px;
+  border:1px dashed rgba(255,255,255,.28); color:rgba(255,255,255,.72);
+  text-decoration:none; font-size:12px; display:flex; align-items:center; gap:8px;
+}
+.side-index:hover{background:rgba(255,255,255,.07); color:#fff; border-color:rgba(255,255,255,.5);}
+.side-index svg{width:14px; height:14px; stroke:currentColor; fill:none; stroke-width:1.7; flex:0 0 auto;}
+
 /* ---------------- 上部バー ---------------- */
 .body{flex:1; min-width:0; display:flex; flex-direction:column;}
 .topbar{

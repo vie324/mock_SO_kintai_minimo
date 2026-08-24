@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SalonOne｜売上ダッシュボード</title>
+<!--
+================================================================================
+[売上ダッシュボード]  → 移植先: /sales
+================================================================================
+■ 現行UIからの主な変更
+
+  1. 「入金売上」→「総売上」に改称（ご指示）
+
+  2. 売上カードを2つのグループに分けた
+     現行は6枚のカードが横一列で、どれとどれが足し引きの関係にあるのか読めない。
+     実際には性質の違う2つの数え方が混ざっている。
+       入金ベース … 実際にお金が入った額。総売上 = 新規 + 継続 + 物販 −返金
+       消化ベース … サービスを提供した額。回数券・サブスクの利用分（回収分）を含む
+     この2つは足し引きする関係にないので、見出しを付けて物理的に分けた。
+     総売上には内訳バーを付け、新規/継続/物販の構成比をその場で読めるようにした。
+
+  3. 表示項目の設定を追加（ご指示）
+     物販を扱わない、回数券がない、口コミ連携していない等、店舗によって
+     使わない項目がある。使わない列が並んでいると読む速度が落ちるため、
+     店舗ごとに出す項目を選べるようにした。プリセット（シンプル/標準/すべて）付き。
+
+  4. 「新規売上の集計対象」を表の中の▼から外に出した
+     現行は表ヘッダーの中に隠れた▼で、ツールチップで操作方法を説明している。
+     説明が要る操作は置き場所が間違っているので、表の上のセグメントに出した。
+     使わない店舗が多いと思われるので、表示項目でオフにできる。
+
+  5. 日次推移グラフを追加
+     現行は24日分を24行の数字で読むしかなく、傾向が掴めない。
+     新規/継続/物販の積み上げ棒にした。
+
+  6. キャンセル「28 / 0」を2つの数値に分けた
+     スラッシュ区切りは何と何かが読めない。「キャンセル28名」「無断0名」と明示。
+
+  7. スタッフ名の列を固定した
+     列が多く横スクロールすると、どの行が誰か分からなくなるため。
+     合計行も表の先頭に置いた（末尾だとスクロールしないと見えない）。
+
+■ グラフの配色について
+  ブランド色（ティール#003737・ゴールド#C6A664）をそのまま系列色に使うと
+  彩度が低く、塗りが灰色に見えるため検証で不合格になった。
+  彩度を上げたうえで、以下を検証スクリプトに通して確定している。
+    ライト #008874 / #BE8A24 / #4A3AA7
+    ダーク #0E9078 / #B8892B / #7E71CF
+  ティールとプラムの組み合わせは2型色覚でΔE2.5となり判別できないため不採用。
+  凡例と直接ラベルを併用し、色だけに依存しない。
+
+■ 確認したいこと
+  ・「予測売上」の算出根拠が不明。達成率の分母として使ってよいか要確認
+  ・「集計対象 1日目/2日目/3日目」の正確な定義が不明
+  ・現行の注記「各指標・各集計項目は、予約間隔時間 ×100（小数点以下は2桁桁
+    四捨五入）で表示しています」は、稼働率の定義が混入した誤記に見える。
+    指標ごとに定義が違うため、注記ではなく各項目のⓘに個別に書いた。
+
+■ API
+  GET /api/sales?from=&to=&staff_id=      期間の集計（金額は円・整数で返す）
+  GET /api/sales/daily?from=&to=          日次
+  GET /api/sales/export?format=csv|xlsx   エクスポート
+================================================================================
+-->
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/base.css">
+<link rel="stylesheet" href="../assets/shell.css">
+<style>
+/* ---- グラフの系列色（検証スクリプトで確定。目視で変えないこと） ----
+   このモック群は現行プロダクトに合わせて明るいテーマのみで作っている。
+   ここでグラフだけダークに切り替わるようにすると、暗い背景で検証した色を
+   明るい背景に乗せることになり、検証の意味が無くなる（実際に一度その状態を作って
+   しまった）。プロダクトがダークテーマを持つときのために、検証済みの値だけ残す。
+
+     ダーク用（背景 #182523 で全ペア検証済み）
+       新規 #0E9078 / 継続 #B8892B / 物販 #7E71CF
+       グリッド #2C3D3A / 軸 #94A5A1
+   ------------------------------------------------------------------------- */
+:root{
+  --s-shinki:#008874; --s-keizoku:#BE8A24; --s-buppan:#4A3AA7;
+  --chart-grid:#EAEAE2; --chart-axis:#8B958F;
+}
+
+.pagehead .right{margin-left:auto; display:flex; gap:8px; flex-wrap:wrap;}
+.subtle{font-size:12.5px; color:var(--mut); font-variant-numeric:tabular-nums;}
+
+/* ---- 期間フィルタ ---- */
+.filters{display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;}
+.fg{display:flex; flex-direction:column; gap:4px;}
+.fg label{font-size:11.5px; color:var(--mut);}
+.fg input, .fg select{height:40px; border:1px solid var(--line); border-radius:10px; background:#fff; padding:0 10px; color:var(--ink);}
+.quick{display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; align-items:center;}
+.quick .l{font-size:11.5px; color:var(--mut); margin-right:2px;}
+.qbtn{height:30px; padding:0 11px; border-radius:999px; border:1px solid var(--line);
+  background:#fff; font-size:12px; color:var(--ink);}
+.qbtn:hover{border-color:var(--teal-3);}
+.qbtn.on{background:var(--teal); color:#fff; border-color:var(--teal);}
+
+/* ---- KPIグループ ---- */
+.grp{margin-bottom:16px;}
+.grp-h{display:flex; align-items:baseline; gap:9px; margin-bottom:9px;}
+.grp-h .t{font-size:12.5px; font-weight:700; letter-spacing:.04em;}
+.grp-h .d{font-size:11.5px; color:var(--mut);}
+
+.kpirow{display:grid; gap:10px; grid-template-columns:1.6fr 1fr;}
+.kpirow.three{grid-template-columns:repeat(3,1fr);}
+.card2{background:var(--paper); border:1px solid var(--line); border-radius:var(--r); padding:14px 16px;}
+.card2 .lab{font-size:12px; color:var(--mut); display:flex; align-items:center; gap:5px;}
+.card2 .big{font-size:30px; font-weight:700; line-height:1.15; margin-top:3px; letter-spacing:-.01em;}
+.card2 .mid{font-size:22px; font-weight:700; line-height:1.2; margin-top:3px;}
+.card2 .sub{font-size:11.5px; color:var(--mut); margin-top:2px; font-variant-numeric:tabular-nums;}
+.card2 .neg{color:var(--danger);}
+
+/* 内訳バー */
+.mix{display:flex; height:9px; border-radius:999px; overflow:hidden; margin:12px 0 9px; background:var(--muted-bg);}
+.mix i{display:block; height:100%;}
+.mix i + i{margin-left:2px;}          /* 塗り同士は2pxの隙間で分ける（枠線は引かない） */
+.mixleg{display:flex; flex-wrap:wrap; gap:12px;}
+.mixleg span{display:flex; align-items:center; gap:6px; font-size:12px; font-variant-numeric:tabular-nums;}
+.mixleg i{width:9px; height:9px; border-radius:3px; flex:0 0 auto;}
+.mixleg b{font-weight:700;}
+.mixleg em{font-style:normal; color:var(--mut); font-size:11px;}
+
+/* 達成率 */
+.goal{margin-top:11px;}
+.goalbar{height:7px; border-radius:999px; background:var(--muted-bg); overflow:hidden;}
+.goalbar i{display:block; height:100%; background:var(--teal-3); border-radius:999px;}
+
+/* ---- グラフ ---- */
+.chartcard{background:var(--paper); border:1px solid var(--line); border-radius:var(--r); padding:14px 16px 10px; margin-bottom:16px;}
+.chart-h{display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px;}
+.chart-h h3{margin:0; font-size:14px; font-weight:700;}
+.legend{display:flex; gap:13px; flex-wrap:wrap; margin-left:auto;}
+.legend span{display:flex; align-items:center; gap:6px; font-size:12px; color:var(--ink);}
+.legend i{width:10px; height:10px; border-radius:3px; flex:0 0 auto;}
+.chartwrap{position:relative;}
+.chartwrap svg{display:block; width:100%;}
+.tip{
+  /* top/left を初期指定しないと静的位置（SVGの下）に置かれ、
+     非表示でも親の高さを20px押し広げてしまう */
+  position:absolute; top:6px; left:0;
+  pointer-events:none; opacity:0; transition:opacity .1s;
+  background:var(--paper); border:1px solid var(--line); border-radius:9px;
+  box-shadow:0 6px 22px rgba(0,0,0,.16); padding:9px 11px; font-size:12px;
+  min-width:158px; z-index:6;
+}
+.tip.on{opacity:1;}
+.tip .d{font-weight:700; margin-bottom:5px;}
+.tip .r{display:flex; align-items:center; gap:7px; margin-top:3px; font-variant-numeric:tabular-nums;}
+.tip .r i{width:8px; height:8px; border-radius:2px; flex:0 0 auto;}
+.tip .r .v{margin-left:auto; font-weight:700;}
+.tip .tot{border-top:1px solid var(--line); margin-top:6px; padding-top:5px; display:flex; font-weight:700;}
+.tip .tot .v{margin-left:auto;}
+
+/* ---- テーブル ---- */
+.tcard{background:var(--paper); border:1px solid var(--line); border-radius:var(--r); margin-bottom:16px; overflow:hidden;}
+.tcard-h{display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:13px 16px; border-bottom:1px solid var(--line);}
+.tcard-h h3{margin:0; font-size:14px; font-weight:700;}
+.tscroll{overflow-x:auto;}
+table.dt{width:100%; border-collapse:separate; border-spacing:0; font-size:13px; white-space:nowrap;}
+table.dt th, table.dt td{padding:9px 11px; border-bottom:1px solid var(--line-2, #EFEFE8); text-align:right; font-variant-numeric:tabular-nums;}
+table.dt th{background:#FAFAF6; font-size:11px; color:var(--mut); font-weight:700; letter-spacing:.02em; position:sticky; top:0; z-index:2;}
+table.dt th.l, table.dt td.l{text-align:left;}
+table.dt .stick{position:sticky; left:0; background:var(--paper); z-index:1; box-shadow:1px 0 0 var(--line);}
+table.dt th.stick{background:#FAFAF6; z-index:3;}
+table.dt tr.sum td{background:var(--muted-bg); font-weight:700;}
+table.dt tr.sum td.stick{background:var(--muted-bg);}
+table.dt tbody tr:last-child td{border-bottom:none;}
+.pos{color:var(--ok);} .negv{color:var(--danger);}
+.zero{color:var(--mut);}
+
+/* 稼働率 */
+.rate{display:inline-flex; align-items:center; gap:7px; justify-content:flex-end; min-width:96px;}
+.rate .v{font-weight:700; min-width:44px; text-align:right;}
+.ratebar{width:42px; height:6px; border-radius:999px; background:var(--muted-bg); overflow:hidden; flex:0 0 auto;}
+.ratebar i{display:block; height:100%; border-radius:999px;}
+.rate.low .v{color:var(--danger);}   .rate.low  .ratebar i{background:var(--danger);}
+.rate.mid .v{color:var(--warn);}     .rate.mid  .ratebar i{background:var(--warn);}
+.rate.high .v{color:var(--ok);}      .rate.high .ratebar i{background:var(--ok);}
+
+/* 集計対象セグメント */
+.seg2{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+.seg2 .l{font-size:11.5px; color:var(--mut);}
+.seg2 .box{display:flex; border:1px solid var(--line); border-radius:9px; overflow:hidden; background:#fff;}
+.seg2 .box button{height:32px; padding:0 13px; font-size:12.5px; color:var(--mut);}
+.seg2 .box button.on{background:var(--teal); color:#fff; font-weight:700;}
+
+/* 内訳チップ */
+.chips{display:flex; gap:5px; flex-wrap:wrap; justify-content:flex-end;}
+.chipv{font-size:11px; background:var(--muted-bg); border-radius:5px; padding:1px 7px; color:var(--ink); font-variant-numeric:tabular-nums;}
+
+/* ---- 表示項目パネル ---- */
+/* .mockbar(95)より前面に。下げると閉じるボタンが押せなくなる */
+.drawer{position:fixed; inset:0; z-index:100; display:none;}
+.drawer.show{display:block;}
+.drawer .sc{position:absolute; inset:0; background:rgba(15,25,23,.42);}
+.drawer .pn{
+  position:absolute; right:0; top:0; bottom:0; width:min(400px,92vw);
+  background:var(--paper); border-left:1px solid var(--line);
+  display:flex; flex-direction:column; box-shadow:-8px 0 28px rgba(0,0,0,.18);
+}
+.drawer .ph{display:flex; align-items:center; gap:10px; padding:16px 18px 12px; border-bottom:1px solid var(--line);}
+.drawer .ph h3{margin:0; font-size:15px;}
+.drawer .ph .x{margin-left:auto; width:30px; height:30px; border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--mut); font-size:15px;}
+.drawer .pb{flex:1; overflow-y:auto; padding:14px 18px 20px;}
+.drawer .pf{padding:12px 18px calc(12px + env(safe-area-inset-bottom)); border-top:1px solid var(--line); display:flex; gap:8px;}
+.drawer .pf .btn{flex:1; height:44px;}
+.dnote{font-size:11.5px; color:var(--mut); line-height:1.6; margin:0 0 14px;}
+.presets{display:flex; gap:6px; margin-bottom:16px;}
+.presets button{flex:1; height:34px; border:1px solid var(--line); border-radius:8px; background:#fff; font-size:12.5px;}
+.presets button:hover{border-color:var(--teal-3);}
+.dsec{margin-bottom:18px;}
+.dsec > h4{font-size:11.5px; letter-spacing:.06em; color:var(--mut); margin:0 0 8px; padding-bottom:6px; border-bottom:1px solid var(--line);}
+.opt{display:flex; align-items:center; gap:10px; padding:7px 2px; cursor:pointer;}
+.opt input{position:absolute; opacity:0; width:0; height:0;}
+.opt .sw{width:36px; height:20px; border-radius:999px; background:#D8D8D0; position:relative; flex:0 0 auto; transition:background .15s;}
+.opt .sw::after{content:''; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.25); transition:left .15s;}
+.opt input:checked + .sw{background:var(--ok);}
+.opt input:checked + .sw::after{left:18px;}
+.opt .tx{font-size:13px;}
+.opt .tx small{display:block; font-size:11px; color:var(--mut); margin-top:1px;}
+.opt.locked{opacity:.55; cursor:not-allowed;}
+
+/* ---- ツールチップ（ⓘ） ---- */
+.info{
+  display:inline-flex; align-items:center; justify-content:center;
+  width:14px; height:14px; border-radius:50%; border:1px solid var(--mut);
+  color:var(--mut); font-size:9.5px; font-weight:700; cursor:help; flex:0 0 auto;
+  position:relative;
+}
+.info:hover, .info:focus-visible{border-color:var(--teal-3); color:var(--teal-3);}
+.info::after{
+  content:attr(data-tip); position:absolute; bottom:calc(100% + 7px); left:50%;
+  transform:translateX(-50%); background:var(--ink); color:var(--paper);
+  font-size:11.5px; font-weight:400; line-height:1.55; padding:7px 10px; border-radius:8px;
+  width:max-content; max-width:250px; white-space:normal; text-align:left;
+  opacity:0; pointer-events:none; transition:opacity .12s; z-index:20;
+}
+.info:hover::after, .info:focus-visible::after{opacity:1;}
+
+@media (max-width:900px){
+  .kpirow, .kpirow.three{grid-template-columns:1fr;}
+  .card2 .big{font-size:26px;}
+  .legend{margin-left:0; width:100%;}
+}
+</style>
+</head>
+<body>
+<div id="shell"></div>
+
+<!-- 表示項目パネル -->
+<div class="drawer" id="drawer">
+  <div class="sc" id="drawerSc"></div>
+  <div class="pn" role="dialog" aria-modal="true" aria-labelledby="drawerTitle">
+    <div class="ph"><h3 id="drawerTitle">表示項目</h3>
+      <button class="x" id="drawerX" aria-label="閉じる">&#x2715;</button></div>
+    <div class="pb" id="drawerBody"></div>
+    <div class="pf">
+      <button class="btn ghost" id="drawerReset">標準に戻す</button>
+      <button class="btn solid" id="drawerDone">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script src="../assets/salesdata.js"></script>
+<script src="../assets/shell.js"></script>
+<script src="../assets/mockbar.js"></script>
+<script src="./sales_dashboard.js"></script>
+</body>
+</html>

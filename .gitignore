@@ -11,3 +11,6 @@ desktop.ini
 # 作業用
 node_modules/
 *.log
+
+# FAQの生成物（docs/kintai_faq.md から作り直せる）
+docs/_build/kintai_faq.html

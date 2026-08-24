@@ -365,7 +365,14 @@ body.sheeting .frame{padding-bottom:150px;}
 .sf-actions button{flex:1; height:46px; border-radius:10px; font-size:14px; font-weight:600;}
 .sf-actions .cancel{border:1px solid var(--line); background:#fff;}
 .sf-actions .make{background:var(--teal); color:#fff;}
-.footnote{padding:14px; font-size:11px; color:var(--mut); text-align:center;}
+.footnote{padding:14px; font-size:11px; color:var(--mut); text-align:center; line-height:1.9;}
+/* 共有リンクでこの画面だけ開いた人の出口。この画面はシェルを使わないので個別に置く */
+.footnote .tolist{
+  display:inline-block; margin-top:6px; padding:7px 14px; border-radius:8px;
+  border:1px solid var(--line); background:#fff; color:var(--teal);
+  text-decoration:none; font-size:12px; font-weight:600;
+}
+.footnote .tolist:hover{border-color:var(--teal-3);}
 </style>
 </head>
 <body>
@@ -420,7 +427,10 @@ body.sheeting .frame{padding-bottom:150px;}
     <div class="cols" id="cols"></div>
   </div>
 
-  <div class="footnote">モック ／ 実装メモはソース冒頭コメントと claude_code_handoff.md 参照</div>
+  <div class="footnote">
+    モック ／ 実装メモはソース冒頭コメントと claude_code_handoff.md 参照<br>
+    <a class="tolist" href="../index.html">← モック一覧へ</a>
+  </div>
 </div>
 
 <div class="editbar" id="editbar" aria-hidden="true">

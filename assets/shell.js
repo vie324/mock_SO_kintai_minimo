@@ -143,6 +143,14 @@ window.Shell = (function () {
           '</div>' +
           (role.pickers ? '<div class="side-picks">' + PICKERS + '</div>' : '') +
           '<nav>' + navHtml(NAV, opt.active) + '</nav>' +
+          /* 共有リンクで1画面だけ開いた人が、他の画面へ移動できるようにする。
+             製品には存在しないモック用の導線なので、見た目を分けてある */
+          '<a class="side-index" href="../index.html">' +
+            '<svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/>' +
+            '<rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/>' +
+            '<rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/>' +
+            '<rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg>' +
+            'モック一覧へ</a>' +
         '</aside>' +
         '<div class="body">' +
           '<header class="topbar">' +

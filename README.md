@@ -3,7 +3,30 @@
 SalonOne の **打刻・勤怠管理** と **minimo連携枠のスマホ操作** の改善案を検証するUIモックです。
 
 素の HTML + CSS + JS で、**ビルドも依存ライブラリもありません**。
-`index.html` をブラウザで開けば5画面すべてを一覧できます。
+
+---
+
+## 公開URL（共有はこちら）
+
+GitHub Pages で公開しています。クローン不要で、**`main` にマージされた内容がそのまま反映**されます。
+
+### https://vie324.github.io/mock_SO_kintai_minimo/
+
+| 画面 | URL |
+|---|---|
+| 一覧（入口） | [`/`](https://vie324.github.io/mock_SO_kintai_minimo/) |
+| 勤怠管理（管理者） | [`/screens/kintai_admin.html`](https://vie324.github.io/mock_SO_kintai_minimo/screens/kintai_admin.html) |
+| 打刻（スタッフ） | [`/screens/kintai_punch.html`](https://vie324.github.io/mock_SO_kintai_minimo/screens/kintai_punch.html) |
+| minimo連携枠 | [`/screens/minimo_slots.html`](https://vie324.github.io/mock_SO_kintai_minimo/screens/minimo_slots.html) |
+| 売上ダッシュボード | [`/screens/sales_dashboard.html`](https://vie324.github.io/mock_SO_kintai_minimo/screens/sales_dashboard.html) |
+
+一覧ページの各カードにある「URL」ボタンで、その画面のリンクだけをコピーできます。
+どの画面からも、サイドバーの「モック一覧へ」で入口に戻れます。
+
+> **スマホ幅の画面は実機で開くのがおすすめです。** PCのブラウザ幅を狭めても確認できますが、
+> タッチ操作（minimo連携のハンドル伸縮など）は実機のほうが正確です。
+
+ローカルで見る場合は `index.html` をブラウザで開くだけです。
 
 ```bash
 git clone https://github.com/vie324/mock_SO_kintai_minimo.git
@@ -13,7 +36,7 @@ open index.html          # macOS。Windows は start、Linux は xdg-open
 
 ---
 
-## 成果物：5画面
+## 成果物：7画面
 
 | # | 画面 | 幅 | ファイル | 移植先 |
 |---|---|---|---|---|
@@ -38,7 +61,7 @@ open index.html          # macOS。Windows は start、Linux は xdg-open
 ## ファイル構成
 
 ```
-index.html                    5画面の一覧（実寸幅のiframeを縮小表示）
+index.html                    7画面の一覧＋共有用URL（実寸幅のiframeを縮小表示）
 screens/
   kintai_admin.html           勤怠管理（管理者）  PC / スマホ
   kintai_punch.html           打刻（スタッフ）    PC / スマホ

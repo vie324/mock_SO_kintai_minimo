@@ -65,6 +65,40 @@ body{background:var(--cream);}
 .view.sp{width:242px; height:523px;}
 .view.sp iframe{width:390px; height:844px; transform:scale(.62);}
 
+/* ---- 共有用の帯 ---- */
+.share{
+  background:var(--paper); border:1px solid var(--line); border-radius:var(--r);
+  padding:14px 16px; margin-bottom:22px;
+}
+.share .t{font-size:12px; font-weight:700; letter-spacing:.04em; color:var(--teal); margin-bottom:8px;}
+.share .row{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
+.share code{
+  flex:1; min-width:220px; background:var(--muted-bg); border:1px solid var(--line);
+  border-radius:8px; padding:9px 11px; font-size:12.5px; color:var(--ink);
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace; overflow-x:auto; white-space:nowrap;
+}
+.share .cp{
+  height:38px; padding:0 14px; border-radius:9px; border:1px solid var(--teal);
+  background:var(--teal); color:#fff; font-size:12.5px; font-weight:600; white-space:nowrap;
+}
+.share .cp:hover{background:var(--teal-2, #0B4A45);}
+.share .note{font-size:11.5px; color:var(--mut); margin:9px 0 0; line-height:1.6;}
+
+/* 各カードのコピーボタン */
+.shot .bar .cp2{
+  font-size:11.5px; font-weight:600; color:var(--mut); border:1px solid var(--line);
+  border-radius:7px; padding:3px 9px; background:#fff; white-space:nowrap;
+}
+.shot .bar .cp2:hover{border-color:var(--teal-3); color:var(--teal-3);}
+.shot .bar .open{margin-left:auto;}
+
+.toastx{
+  position:fixed; left:50%; bottom:26px; transform:translate(-50%,14px);
+  background:var(--teal); color:#fff; font-size:13px; padding:10px 18px; border-radius:10px;
+  box-shadow:0 6px 18px rgba(0,0,0,.25); opacity:0; pointer-events:none; transition:.18s; z-index:90;
+}
+.toastx.on{opacity:1; transform:translate(-50%,0);}
+
 .legend{
   background:var(--paper); border:1px solid var(--line); border-radius:var(--r);
   padding:14px 16px; font-size:12.5px; color:var(--mut); line-height:1.7;
@@ -96,6 +130,16 @@ body{background:var(--cream);}
 </div>
 
 <div class="wrap">
+
+  <div class="share">
+    <div class="t">共有用URL</div>
+    <div class="row">
+      <code id="baseUrl">—</code>
+      <button class="cp" id="cpBase">このページのURLをコピー</button>
+    </div>
+    <p class="note">各画面のカード右上の「開く」で個別に表示、「URL」でその画面のリンクだけをコピーできます。<br>
+      スマホ幅の画面（打刻・minimo連携・売上のスマホ表示）は、URLを端末に送って<b>実機で開く</b>と本来の見え方になります。</p>
+  </div>
 
   <section class="sec">
     <h2>勤怠管理（管理者）<span class="cnt">2画面 — PC / スマホ</span></h2>
@@ -192,6 +236,62 @@ body{background:var(--cream);}
     </div>
   </div>
 
+  <div class="toastx" id="tx"></div>
 </div>
+
+<script>
+(function(){
+  'use strict';
+  var base = new URL('.', location.href).href;
+  document.getElementById('baseUrl').textContent = base;
+
+  var tx = document.getElementById('tx'), tt;
+  function toast(m){
+    tx.textContent = m; tx.classList.add('on');
+    clearTimeout(tt); tt = setTimeout(function(){ tx.classList.remove('on'); }, 2200);
+  }
+  function copy(text, what){
+    // clipboard API は https と localhost でしか使えない。
+    // file:// で開いた場合に黙って失敗しないよう、代替手段を用意する
+    if(navigator.clipboard && window.isSecureContext){
+      navigator.clipboard.writeText(text)
+        .then(function(){ toast(what + 'をコピーしました'); })
+        .catch(function(){ fallback(text, what); });
+    }else{
+      fallback(text, what);
+    }
+  }
+  function fallback(text, what){
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;top:-1000px;left:-1000px';
+    document.body.appendChild(ta);
+    ta.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch(e){ ok = false; }
+    document.body.removeChild(ta);
+    toast(ok ? (what + 'をコピーしました') : 'コピーできませんでした。URLを手動で選択してください');
+  }
+
+  document.getElementById('cpBase').addEventListener('click', function(){
+    copy(base, 'このページのURL');
+  });
+
+  // 各カードに「URL」ボタンを足す（7か所を個別に書かない）
+  [].slice.call(document.querySelectorAll('.shot .bar')).forEach(function(bar){
+    var open = bar.querySelector('.open');
+    if(!open) return;
+    var url = new URL(open.getAttribute('href'), location.href).href;
+    var nm  = bar.querySelector('.nm') ? bar.querySelector('.nm').textContent : '画面';
+    var b = document.createElement('button');
+    b.className = 'cp2';
+    b.type = 'button';
+    b.textContent = 'URL';
+    b.title = url;
+    b.addEventListener('click', function(){ copy(url, nm + 'のURL'); });
+    bar.insertBefore(b, open);
+  });
+})();
+</script>
 </body>
 </html>

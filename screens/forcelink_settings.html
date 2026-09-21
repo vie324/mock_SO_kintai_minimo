@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SalonOne｜強制リンク設定（オプションの推奨）</title>
+<!--
+================================================================================
+[強制リンク設定]  公開予約フォームごとに、オプションを提案するかを決める
+   → 移植先: /settings/templates/force-links
+================================================================================
+■ 足したもの
+  強制リンクごとに「予約時にオプションを提案するか」のチェックを持たせた。
+  提案する場合は、対象のオプションもここで選ぶ。
+
+■ なぜメニュー側と強制リンク側で分けたか
+
+    メニュー側（メニュー設定）      … このメニューに<何が付けられるか>
+    強制リンク側（この画面）        … 今回のフォームで<それを勧めるか>
+
+  同じメニューでも、フォームによって出し方を変えたいことがある。
+
+    ・新規集客のフォーム … 単価を上げたいのでオプションを積極的に出す
+    ・LINE配信の再来フォーム … 予約完了まで短くしたいので出さない
+    ・期間限定の特価フォーム … 特価が主役なので出さない
+
+  メニュー側だけで決めると、この出し分けができない。
+  強制リンク側だけで決めると、メニューごとに付けられないオプションまで出てしまう。
+  両方持って AND を取るのが正しい。
+
+■ オフとオプションの扱いの違い ★混ぜないこと
+
+              決める場所         予約時        選ばないと
+    オフ      メニュー設定       必須          次に進めない
+    オプション 強制リンク設定     任意（提案）   そのまま進める
+
+  オフは選ばないと所要時間も料金も確定しない。だから必須で、
+  この画面にON/OFFは無い（メニュー側の設定がそのまま効く）。
+  対象メニューの一覧に、そのメニューがオフを聞く設定かどうかを出している。
+  ネイル・アイのメニューなのにオフ未設定だと、ここで気づける。
+
+■ どちらも「日時の前」に聞く
+  オフもオプションも所要時間を足すので、日時より先に確定させる。
+  フォームの順番は  メニュー → オフ → オプション → 日時 → お客様情報。
+
+■ データモデル案
+    force_links   ... , recommend_options BOOL,
+                        recommend_option_ids[]  空なら対象メニューの全候補,
+                        recommend_required BOOL 既定 false
+
+■ API案
+    GET/PATCH  /api/force-links/:id
+    GET        /api/force-links/:id/preview
+
+■ 確認したいこと
+  ・「提案を必須にする」を使う店舗があるか（既定はOFFにしてある）
+  ・オプションの並び順を店舗が決めたいか（今は単価の高い順に出している）
+================================================================================
+-->
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/base.css">
+<link rel="stylesheet" href="../assets/shell.css">
+<style>
+:root{ --sub:#4A3AA7; --sub-soft:#EEEBFA; --sub-line:#C9C1EE; }
+
+.lead{font-size:12.5px; color:var(--mut); line-height:1.7; margin:0 0 14px; max-width:920px;}
+.lead b{color:var(--ink);}
+
+/* ---------- 一覧 ---------- */
+.flcards{display:flex; flex-direction:column; gap:10px;}
+.flcard{
+  background:var(--paper); border:1px solid var(--line); border-radius:var(--r);
+  padding:14px 16px; display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap;
+}
+.flcard .main{flex:1 1 320px; min-width:0;}
+.flcard .nm{font-size:15px; font-weight:700; display:flex; align-items:center; gap:9px; flex-wrap:wrap;}
+.flcard .meta{font-size:11.5px; color:var(--mut); line-height:1.8; margin-top:4px;}
+.flcard .meta .mono{
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--ink);
+  background:var(--muted-bg); border-radius:5px; padding:1px 7px;
+}
+.st{font-size:10.5px; font-weight:700; border-radius:6px; padding:2px 9px; white-space:nowrap;}
+.st.on{background:var(--ok-soft); color:#1F6A46; border:1px solid rgba(46,139,95,.35);}
+.st.draft{background:var(--muted-bg); color:var(--mut); border:1px solid var(--line);}
+.recbadge{
+  font-size:10.5px; font-weight:700; border-radius:6px; padding:2px 9px; white-space:nowrap;
+  background:var(--sub-soft); color:var(--sub); border:1px solid var(--sub-line);
+}
+.recbadge.off{background:#fff; color:var(--mut); border:1px dashed var(--line);}
+.flcard .kpi{display:flex; gap:18px; flex:0 0 auto;}
+.flcard .kpi div{text-align:right;}
+.flcard .kpi .k{font-size:10.5px; color:var(--mut);}
+.flcard .kpi .v{font-size:17px; font-weight:700; font-variant-numeric:tabular-nums;}
+.flcard .acts{display:flex; gap:6px; flex:0 0 auto; align-items:center; flex-wrap:wrap;}
+
+/* ---------- 詳細 ---------- */
+.back{
+  display:inline-flex; align-items:center; gap:6px; font-size:12.5px; font-weight:600;
+  color:var(--teal-3); margin-bottom:12px;
+}
+.back svg{width:14px; height:14px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round;}
+.cols{display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:14px; align-items:start;}
+@media (max-width:1100px){ .cols{grid-template-columns:1fr;} }
+
+.fl2{display:block; font-size:12px; font-weight:600; margin:0 0 5px;}
+.inp, select.inp{
+  width:100%; height:42px; border:1px solid var(--line); border-radius:10px; background:#fff; padding:0 11px;
+}
+.two{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+.fldbox{margin-bottom:13px;}
+
+.ck{display:flex; align-items:flex-start; gap:9px; font-size:13px; cursor:pointer; padding:4px 0;}
+.ck input{width:17px; height:17px; accent-color:var(--teal); flex:0 0 auto; margin-top:2px;}
+.ck .t{line-height:1.55;}
+.ck .h{display:block; font-size:11.5px; color:var(--mut); line-height:1.65; margin-top:3px;}
+.ck .h b{color:var(--ink);}
+
+.grp{border:1px solid var(--line); border-radius:12px; padding:12px 13px; background:#FCFCFA;}
+.grp.acc{border-color:var(--sub-line); background:#FBFAFE;}
+.sub-body{margin-top:11px; padding-top:11px; border-top:1px dashed var(--sub-line); display:none;}
+.sub-body.show{display:block;}
+
+/* 対象メニュー */
+.mrow{
+  display:flex; align-items:center; gap:10px; padding:9px 10px; border:1px solid var(--line);
+  border-radius:10px; background:#fff; margin-bottom:6px; cursor:pointer;
+}
+.mrow input{width:16px; height:16px; accent-color:var(--teal); flex:0 0 auto;}
+.mrow .nm{flex:1; min-width:0; font-size:12.5px; font-weight:600; line-height:1.4;}
+.mrow .pz{font-size:11.5px; color:var(--mut); font-variant-numeric:tabular-nums; white-space:nowrap;}
+.bdg{
+  font-size:10px; font-weight:700; border-radius:5px; padding:2px 7px; white-space:nowrap;
+  border:1px solid var(--line); background:var(--muted-bg); color:var(--mut);
+}
+.bdg.off{background:var(--sub-soft); color:var(--sub); border-color:var(--sub-line);}
+.bdg.noff{background:#fff; color:var(--mut); border-style:dashed;}
+.bdg.warn{background:var(--danger-soft); color:var(--danger); border-color:rgba(196,52,43,.4);}
+.bdg.opt{background:var(--ok-soft); color:#1F6A46; border-color:rgba(46,139,95,.3);}
+
+.optrow{
+  display:flex; align-items:center; gap:9px; padding:8px 10px; border:1px solid var(--line);
+  border-radius:10px; background:#fff; margin-bottom:6px; cursor:pointer; font-size:12.5px;
+}
+.optrow input{width:16px; height:16px; accent-color:var(--sub); flex:0 0 auto;}
+.optrow .nm{flex:1; min-width:0;}
+.optrow .pz{font-size:11.5px; color:var(--mut); font-variant-numeric:tabular-nums; white-space:nowrap;}
+.optrow.dim{opacity:.45; cursor:default;}
+
+.hint{font-size:11.5px; color:var(--mut); line-height:1.7; margin-top:9px;}
+.hint b{color:var(--ink);}
+
+/* オフの説明表 */
+table.cmp{width:100%; border-collapse:collapse; font-size:12px; margin-top:9px; background:#fff;}
+table.cmp th{
+  text-align:left; font-size:10.5px; color:var(--mut); font-weight:600;
+  padding:7px 9px; border-bottom:1px solid var(--line); background:#FAFAF6;
+}
+table.cmp td{padding:8px 9px; border-bottom:1px solid var(--line); line-height:1.5;}
+table.cmp tr:last-child td{border-bottom:none;}
+table.cmp td b{color:var(--ink);}
+
+/* プレビュー */
+.pvcard{position:sticky; top:74px;}
+.phone{
+  border:8px solid #2A3B38; border-radius:26px; overflow:hidden; background:#fff;
+  box-shadow:0 8px 24px rgba(0,0,0,.14);
+}
+.phone .ph-h{
+  background:#F7FAF5; padding:12px 13px; border-bottom:1px solid var(--line); text-align:center;
+}
+.phone .ph-h .b{font-size:13px; font-weight:700;}
+.phone .ph-h .s{font-size:10.5px; color:var(--mut);}
+.phone .ph-b{padding:12px 13px; max-height:430px; overflow-y:auto;}
+.stepbar{display:flex; align-items:center; gap:5px; justify-content:center; margin-bottom:12px;}
+.stepbar .d{
+  width:19px; height:19px; border-radius:50%; background:#E4E4DC; color:var(--mut);
+  font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center;
+}
+.stepbar .d.on{background:#7DC24B; color:#fff;}
+.stepbar .l{width:16px; height:1.5px; background:#E4E4DC;}
+.pvsec{margin-bottom:12px;}
+.pvsec .t{
+  font-size:12px; font-weight:700; border-left:3px solid #7DC24B; padding-left:8px; margin-bottom:8px;
+  display:flex; align-items:center; gap:6px;
+}
+.pvsec .t .req{font-size:9.5px; font-weight:700; color:#fff; background:var(--danger); border-radius:4px; padding:1px 5px;}
+.pvsec .t .opt{font-size:9.5px; font-weight:700; color:var(--mut); background:var(--muted-bg); border:1px solid var(--line); border-radius:4px; padding:1px 5px;}
+.pvopt{
+  display:flex; align-items:center; gap:8px; font-size:11.5px; padding:8px 9px;
+  border:1px solid var(--line); border-radius:9px; margin-bottom:5px;
+}
+.pvopt .r{width:14px; height:14px; border-radius:50%; border:1.5px solid #C3CBC9; flex:0 0 auto;}
+.pvopt .r.sq{border-radius:4px;}
+.pvopt .nm{flex:1; min-width:0;}
+.pvopt .pz{font-size:10.5px; color:var(--mut); font-variant-numeric:tabular-nums; white-space:nowrap;}
+.pvnone{font-size:11.5px; color:var(--mut); padding:10px; border:1px dashed var(--line); border-radius:9px; text-align:center;}
+.pvfoot{font-size:10.5px; color:var(--mut); margin-top:10px; line-height:1.6; text-align:center;}
+
+.savebar{
+  display:flex; gap:9px; align-items:center; margin-top:14px; padding-top:14px;
+  border-top:1px solid var(--line); flex-wrap:wrap;
+}
+.savebar .sp{flex:1;}
+</style>
+</head>
+<body>
+<div id="shell"></div>
+<div class="toast" id="toast" role="status"></div>
+
+<script src="../assets/menudata.js"></script>
+<script src="../assets/shell.js"></script>
+<script src="../assets/mockbar.js"></script>
+<script src="./forcelink_settings.js"></script>
+</body>
+</html>

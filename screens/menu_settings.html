@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SalonOne｜メニュー設定（オフ・オプション）</title>
+<!--
+================================================================================
+[メニュー設定]  ネイル／アイの「オフ」をメニューの設定として持たせる
+   → 移植先: /settings/menus
+================================================================================
+■ 現状の課題
+  メニュー一覧を見ると、オフの条件がメニュー名に書き込まれている。
+
+      【NEW OPEN記念】ワンカラー（ご新規様/自店オフ無料）¥6500→¥4800
+
+  名前に書いてあるだけなので、システムは何も知らない。結果として
+
+    ・他店オフのお客様が「自店オフ無料」のメニューを取ってしまう
+    ・オフの15〜30分が枠に入らず、後ろの予約が押す
+    ・会計時にオフ代を手で足す（足し忘れる）
+    ・同じメニューを「自店オフ版」「他店オフ版」と2本持つ羽目になる
+
+  ホットペッパーは、メニュー作成時に「オフを聞く／聞かない」を選べる。
+  聞く設定にすると、お客様がそのメニューを選んだ時点でオフの選択画面が出る。
+  同じものを SalonOne 側にも持たせる。
+
+■ 足したもの
+
+  1. メニュー編集モーダルに「オフの確認」欄
+     オフを聞く／聞かない と、どのオフセット（ネイル用／アイ用）を使うかを選ぶ。
+     現行モーダルの「オプション」欄のすぐ下に置いた。
+     その場で「予約フォームでの見え方」を出して、設定と結果を並べている。
+
+  2. メニュー編集モーダルに「提案できるオプション」欄
+     このメニューに付けられるオプションを選んでおく。
+     実際に予約時へ出すかどうかは、強制リンクごとの設定（forcelink_settings.html）で決める。
+     メニュー側 ＝ 何が付けられるか／強制リンク側 ＝ 今回それを勧めるか、と分けてある。
+
+  3. タブ「オフ・オプション」
+     オフの選択肢と追加オプションのマスタ。店舗ごとに1つ持つ。
+     ジャンルでセットを分けている（ネイルとアイで聞くことが違うため）。
+
+  4. 一覧に「オフ / オプション」列
+     どのメニューがオフを聞く設定になっているかが一覧で分かる。
+
+■ オフは必須・オプションは任意
+  オフは選ばないと所要時間も料金も確定しないので、予約時の必須項目。
+  オプションは付けなくても成立するので任意。性質が違うので、
+  予約フォームでも別の扱いにしてある（booking_form.html 参照）。
+
+■ データモデル案
+    off_sets      id, shop_id, genre(nail|eye), name, question
+    off_choices   id, off_set_id, name, price, minutes, is_no_off, sort
+    options       id, shop_id, genre, name, price, minutes
+    menus         ... , off_set_id NULL, option_ids[]
+                    off_set_id NULL → オフを聞かない
+
+■ API案
+    GET/PUT  /api/shops/:id/off-sets
+    GET/PUT  /api/shops/:id/options
+    PATCH    /api/menus/:id            off_set_id, option_ids
+
+■ 確認したいこと
+  ・オフの選択肢は店舗ごとで足りるか（ブランド共通のほうが運用が楽なら要検討）
+  ・「自店オフ」を無料にするかは店舗で違う。金額はマスタ側で持てばよいはず
+  ・オフありの予約が入ったとき、HPB側のメニューとどう突き合わせるか
+    （HPBは［オフ込］のように1メニューに畳んでいることが多い）
+================================================================================
+-->
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/base.css">
+<link rel="stylesheet" href="../assets/shell.css">
+<style>
+:root{ --sub:#4A3AA7; --sub-soft:#EEEBFA; --sub-line:#C9C1EE; }
+
+/* ---------- タブ ---------- */
+.tabs{display:flex; gap:2px; border-bottom:1px solid var(--line); margin:4px 0 16px;}
+.tabs button{
+  padding:10px 16px; font-size:14px; font-weight:600; color:var(--mut);
+  border-bottom:2.5px solid transparent; display:flex; align-items:center; gap:7px;
+}
+.tabs button.on{color:var(--ink); border-bottom-color:var(--teal);}
+.tabs button .new{
+  font-size:9.5px; font-weight:700; color:#fff; background:var(--gold);
+  border-radius:4px; padding:1px 5px; letter-spacing:.03em;
+}
+
+/* ---------- 一覧のヘッダー ---------- */
+.lhead{display:flex; align-items:center; gap:10px; margin-bottom:12px; flex-wrap:wrap;}
+.lhead .n{font-size:13px; color:var(--mut);}
+.lhead .sp{flex:1;}
+.chips{display:flex; gap:7px; flex-wrap:wrap; margin-bottom:11px;}
+.chip{
+  font-size:12.5px; font-weight:600; color:var(--mut); border:1px solid var(--line);
+  border-radius:999px; padding:6px 14px; background:#fff; white-space:nowrap;
+}
+.chip.on{background:var(--teal); border-color:var(--teal); color:#fff;}
+.search{position:relative; max-width:520px; margin-bottom:14px;}
+.search input{
+  width:100%; height:42px; border:1px solid var(--line); border-radius:10px;
+  background:#fff; padding:0 12px 0 38px;
+}
+.search svg{
+  position:absolute; left:12px; top:13px; width:16px; height:16px;
+  stroke:var(--mut); fill:none; stroke-width:1.9;
+}
+
+/* ---------- メニュー表 ---------- */
+.tblwrap{background:var(--paper); border:1px solid var(--line); border-radius:var(--r); overflow:auto;}
+table.mt{width:100%; border-collapse:collapse; font-size:13px; min-width:860px;}
+table.mt th{
+  text-align:left; font-size:11.5px; font-weight:600; color:var(--mut);
+  padding:11px 12px; background:#FAFAF6; border-bottom:1px solid var(--line); white-space:nowrap;
+}
+table.mt td{padding:11px 12px; border-bottom:1px solid var(--line); vertical-align:middle;}
+table.mt tr:last-child td{border-bottom:none;}
+table.mt tr:hover td{background:#FCFCFA;}
+.grip{color:#C3CBC9; cursor:grab; font-size:14px; line-height:1;}
+.rank{font-variant-numeric:tabular-nums; color:var(--mut); width:1%;}
+.mname{font-weight:600; line-height:1.45; max-width:520px;}
+.mbadges{display:flex; gap:5px; margin-top:4px; flex-wrap:wrap;}
+.bdg{
+  font-size:10px; font-weight:700; border-radius:5px; padding:2px 7px; white-space:nowrap;
+  border:1px solid var(--line); background:var(--muted-bg); color:var(--mut);
+}
+.bdg.hpb{background:#E9F1F9; color:var(--info); border-color:rgba(47,109,168,.25);}
+.bdg.mini{background:var(--warn-soft); color:var(--warn); border-color:rgba(180,116,11,.28);}
+.bdg.shop{background:var(--muted-bg);}
+.bdg.off{background:var(--sub-soft); color:var(--sub); border-color:var(--sub-line);}
+.bdg.opt{background:var(--ok-soft); color:#1F6A46; border-color:rgba(46,139,95,.3);}
+.bdg.hide{background:#fff; color:var(--mut); border-style:dashed;}
+.plan{
+  font-size:11.5px; border:1px solid var(--line); border-radius:6px; padding:3px 9px;
+  background:var(--muted-bg); color:var(--mut); white-space:nowrap;
+}
+td.num{text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap;}
+.iact{display:flex; gap:2px; justify-content:flex-end;}
+.iact button{width:30px; height:30px; border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--mut);}
+.iact button:hover{background:var(--muted-bg); color:var(--ink);}
+.iact button.del:hover{background:var(--danger-soft); color:var(--danger);}
+.iact svg{width:15px; height:15px; stroke:currentColor; fill:none; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round;}
+
+/* ---------- 注意帯 ---------- */
+.tip{
+  display:flex; gap:11px; align-items:flex-start; background:#FFFDF7;
+  border:1px solid var(--gold); border-radius:var(--r); padding:12px 14px; margin-bottom:14px;
+}
+.tip .i{
+  width:22px; height:22px; border-radius:50%; background:var(--gold); color:#fff; flex:0 0 auto;
+  display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700;
+}
+.tip .b{font-size:12.5px; line-height:1.75; color:var(--ink);}
+.tip .b b{color:#8A6D2F;}
+.tip code{
+  background:var(--muted-bg); border-radius:5px; padding:1px 6px; font-size:11.5px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+
+/* ---------- 編集モーダル ---------- */
+.modal.wide{max-width:560px;}
+.modal h3{display:flex; align-items:center; gap:9px;}
+.modal h3 svg{width:18px; height:18px; stroke:var(--teal); fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round;}
+.fl{display:block; font-size:12px; font-weight:600; margin:14px 0 5px;}
+.fl .req{color:var(--danger); font-size:11px; margin-left:3px;}
+.inp, select.inp{
+  width:100%; height:44px; border:1px solid var(--line); border-radius:10px; background:#fff; padding:0 11px;
+}
+.two{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+.priceRow{display:grid; grid-template-columns:1fr 110px; gap:8px;}
+.imgrow{display:flex; gap:11px; align-items:flex-start;}
+.imgbox{
+  width:58px; height:58px; border-radius:10px; background:var(--muted-bg); border:1px solid var(--line);
+  display:flex; align-items:center; justify-content:center; flex:0 0 auto;
+}
+.imgbox svg{width:22px; height:22px; stroke:#BFC7C4; fill:none; stroke-width:1.6;}
+.imghint{font-size:11px; color:var(--mut); line-height:1.6; margin-top:6px;}
+
+.grp{
+  border:1px solid var(--line); border-radius:12px; padding:12px 13px; margin-top:7px; background:#FCFCFA;
+}
+.grp.acc{border-color:var(--sub-line); background:#FBFAFE;}
+.ck{display:flex; align-items:flex-start; gap:9px; font-size:13px; cursor:pointer; padding:3px 0;}
+.ck input{width:17px; height:17px; accent-color:var(--teal); flex:0 0 auto; margin-top:2px;}
+.ck .t{line-height:1.5;}
+/* 補足は必ず改行する。インラインのままだと本文と地続きに読めてしまう */
+.ck .h{display:block; font-size:11.5px; color:var(--mut); line-height:1.6; margin-top:3px;}
+.ck .h b{color:var(--ink);}
+
+.offbody{margin-top:11px; padding-top:11px; border-top:1px dashed var(--sub-line); display:none;}
+.offbody.show{display:block;}
+.seg2{display:inline-flex; border:1px solid var(--line); border-radius:9px; overflow:hidden; background:#fff;}
+.seg2 button{height:36px; padding:0 14px; font-size:12.5px; font-weight:600; color:var(--mut);}
+.seg2 button.on{background:var(--sub); color:#fff;}
+
+.prev{
+  border:1px solid var(--line); border-radius:10px; background:#fff; padding:11px 12px; margin-top:11px;
+}
+.prev .pt{
+  font-size:10.5px; font-weight:700; color:var(--mut); letter-spacing:.04em; margin-bottom:7px;
+  display:flex; align-items:center; gap:6px;
+}
+.prev .pt::before{content:''; width:6px; height:6px; border-radius:50%; background:var(--gold);}
+.prev .q{font-size:13px; font-weight:700; margin-bottom:8px;}
+.prev .ch{
+  display:flex; align-items:center; gap:9px; font-size:12.5px; padding:7px 9px;
+  border:1px solid var(--line); border-radius:9px; margin-bottom:5px; background:#fff;
+}
+.prev .ch .r{
+  width:15px; height:15px; border-radius:50%; border:1.5px solid #C3CBC9; flex:0 0 auto;
+}
+.prev .ch .nm{flex:1; min-width:0;}
+.prev .ch .pz{font-variant-numeric:tabular-nums; font-size:11.5px; color:var(--mut); white-space:nowrap;}
+.prev .note{font-size:11px; color:var(--mut); margin-top:7px; line-height:1.6;}
+
+.optlist{display:flex; flex-direction:column; gap:2px; margin-top:9px;}
+.optrow{
+  display:flex; align-items:center; gap:9px; font-size:12.5px; padding:7px 9px;
+  border:1px solid var(--line); border-radius:9px; background:#fff; cursor:pointer;
+}
+.optrow input{width:16px; height:16px; accent-color:var(--teal); flex:0 0 auto;}
+.optrow .nm{flex:1; min-width:0;}
+.optrow .gn{font-size:10px; font-weight:700; border-radius:4px; padding:1px 6px; background:var(--muted-bg); color:var(--mut);}
+.optrow .pz{font-variant-numeric:tabular-nums; font-size:11.5px; color:var(--mut); white-space:nowrap;}
+
+/* ---------- オフ・オプション タブ ---------- */
+.card h2 .cnt{font-size:11.5px; color:var(--mut); font-weight:500;}
+.setcard{margin-bottom:14px;}
+.setcard .sh{display:flex; align-items:center; gap:9px; margin-bottom:4px; flex-wrap:wrap;}
+.setcard .sh .gn{
+  font-size:10.5px; font-weight:700; border-radius:6px; padding:2px 9px;
+  background:var(--sub-soft); color:var(--sub); border:1px solid var(--sub-line);
+}
+.setcard .sq{font-size:12px; color:var(--mut); margin-bottom:11px;}
+table.ct{width:100%; border-collapse:collapse; font-size:12.5px;}
+table.ct th{
+  text-align:left; font-size:11px; font-weight:600; color:var(--mut); padding:7px 10px;
+  border-bottom:1px solid var(--line); white-space:nowrap;
+}
+table.ct td{padding:8px 10px; border-bottom:1px solid var(--line);}
+table.ct tr:last-child td{border-bottom:none;}
+table.ct td.num{text-align:right; font-variant-numeric:tabular-nums;}
+table.ct .nooff{color:var(--mut);}
+.usedby{font-size:11.5px; color:var(--mut); margin-top:10px; line-height:1.7;}
+.usedby b{color:var(--ink);}
+
+@media (max-width:700px){
+  .two, .priceRow{grid-template-columns:1fr;}
+}
+</style>
+</head>
+<body>
+<div id="shell"></div>
+
+<!-- メニュー編集 -->
+<div class="mask" id="mask">
+  <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="eTitle">
+    <h3 id="eTitle">
+      <svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>メニューを編集</h3>
+    <div class="mdate">メニューの情報を編集してください</div>
+    <div id="eBody"></div>
+    <div class="mactions" style="margin-top:16px">
+      <button class="btn solid" id="eSave">更新する</button>
+      <button class="btn ghost" id="eClose">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script src="../assets/menudata.js"></script>
+<script src="../assets/shell.js"></script>
+<script src="../assets/mockbar.js"></script>
+<script src="./menu_settings.js"></script>
+</body>
+</html>

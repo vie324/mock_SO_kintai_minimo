@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SalonOne｜HPB連携（サロンボード連携 認証情報）</title>
+<!--
+================================================================================
+[HPB連携]  1店舗に HPB ページが複数ある場合の連携と紐付け
+   → 移植先: /settings/external/hpb
+================================================================================
+■ 何を足したか
+
+  1. 1店舗 : N連携ページ
+     現行は「店舗1行 ＝ サロンボードのログイン1つ」。
+     実際には1つの店舗がHPBのページを2枚持つ運用がある（ヘア／美容整体のページ＋
+     ネイル＆アイのページなど）。ページごとにログインID・パスワードが別なので、
+     行の下に連携ページをぶら下げる形に変えた。
+     一覧では店舗名の横に「2ページ」バッジ、下段にサブページの行を出す。
+
+  2. 「HPB紐付け設定」モーダルに ＜連携ページ＞ と ＜追加連携＞ を載せた
+     追加連携はログインID・パスワードを入れて認証すると、その場で列が1本増える。
+     増えた列は全セル未設定なので、そのまま紐付けに進める導線になっている。
+
+  3. スタッフ／メニュー／設備の紐付けをマトリクスにした
+     行 = SalonOne側、列 = 連携ページ。
+     「スタッフAは両方、スタッフBはサブだけ」という重複／独立の関係が
+     1画面で読める。ページごとのタブだと、この関係は絶対に見えない。
+
+■ セルの3状態 ★ここが設計の肝
+
+     紐付け済み    HPB側のIDと結んである
+     出さない      このページには載せない（意図的。対応不要）
+     未設定        まだ決めていない（要対応）
+
+  「出さない」と「未設定」を分けているのは、重複防止の成否がここで決まるため。
+  未設定だと、予約が入っても相手ページの閉じるべき枠のIDが分からず
+  ブロックできない ＝ 二重予約が成立する。
+  2状態にすると、この2つが同じ見た目になり事故の原因が追えなくなる。
+
+■ ページ間ブロック（重複防止）は常時有効・ON/OFFなし
+  片方のページに予約が入ったら、もう一方の同じスタッフ・同じ時間帯を自動で閉じる。
+  設定で切れるようにはしていない（切った状態を選べる理由がないため）。
+  画面では「常時有効」のステータスとして出し、トグルにはしない。
+  成立条件は紐付けが済んでいることなので、未設定件数を最上段の警告に出している。
+
+■ 一括操作
+  ページを1枚足すたびにスタッフ全員を手で選ぶのは現実的でないので、
+  列ヘッダーの ▾ に「候補名で自動紐付け」「すべて“出さない”」を入れた。
+  自動紐付けは名前の一致で埋めるだけで、当たらなかった行は未設定のまま残す。
+  （HPB側の表記が "MIURA" のように違うことがあるため、完全自動にはできない）
+
+■ データモデル案
+    hpb_pages           id, shop_id, role(main|sub), name, genre,
+                        login_id, password_enc, salon_id,
+                        status, last_synced_at, auto_sync, auto_account
+    hpb_linkages        id, page_id, kind(staff|menu|equipment),
+                        salonone_id, hpb_code NULL, excluded BOOL
+                          hpb_code NULL かつ excluded=false  → 未設定
+                          excluded=true                      → 出さない
+    hpb_slot_blocks     id, page_id, lane_id, starts_at, ends_at,
+                        caused_by_reservation_id, state(done|pending|unmapped|skip)
+
+■ API案
+    GET    /api/shops/:id/hpb-pages
+    POST   /api/shops/:id/hpb-pages            追加連携（認証＋マスタ取得）
+    POST   /api/hpb-pages/:id/reauth
+    DELETE /api/hpb-pages/:id                  連携解除
+    GET    /api/shops/:id/hpb-linkages?kind=staff
+    PUT    /api/shops/:id/hpb-linkages         マトリクスをまとめて保存
+
+■ 確認したいこと
+  ・1店舗あたりの連携ページ数の上限（モックはN枚を許す作りにしている）
+  ・連携解除したとき、そのページ由来の過去予約をどう扱うか（残す／印を付ける）
+  ・サロンボードのパスワード変更を検知したときの通知先
+================================================================================
+-->
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/base.css">
+<link rel="stylesheet" href="../assets/shell.css">
+<style>
+:root{
+  /* サブページの識別色。予約表と同じ値を使う（別画面で色が変わると学習が無駄になる） */
+  --sub:#4A3AA7; --sub-soft:#EEEBFA; --sub-line:#C9C1EE;
+}
+
+/* ---------- 説明リード ---------- */
+.lead{
+  font-size:12.5px; color:var(--mut); line-height:1.7; margin:0 0 14px;
+  max-width:980px;
+}
+.lead b{color:var(--ink);}
+
+/* ---------- 重複防止のステータス帯 ---------- */
+.guard{
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+  background:var(--ok-soft); border:1px solid rgba(46,139,95,.3);
+  border-radius:var(--r); padding:11px 14px; margin-bottom:14px;
+}
+.guard .ttl{font-size:13px; font-weight:700; color:#1F6A46; display:flex; align-items:center; gap:7px;}
+.guard .ttl svg{width:16px; height:16px; stroke:#1F6A46; fill:none; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round;}
+.guard .always{
+  font-size:10.5px; font-weight:700; letter-spacing:.04em; color:#1F6A46;
+  border:1px solid rgba(46,139,95,.45); border-radius:999px; padding:2px 9px; background:#fff;
+}
+.guard .desc{font-size:12px; color:#2C5E48; line-height:1.6; flex:1; min-width:260px;}
+.guard.bad{background:var(--danger-soft); border-color:rgba(196,52,43,.32);}
+.guard.bad .ttl, .guard.bad .always{color:var(--danger); border-color:rgba(196,52,43,.4);}
+.guard.bad .ttl svg{stroke:var(--danger);}
+.guard.bad .desc{color:#8C2F28;}
+.guard .go{
+  font-size:12px; font-weight:700; color:var(--danger); text-decoration:underline;
+  white-space:nowrap;
+}
+
+/* ---------- 一覧テーブル ---------- */
+.tblwrap{
+  background:var(--paper); border:1px solid var(--line); border-radius:var(--r); overflow:hidden;
+}
+table.list{width:100%; border-collapse:collapse; font-size:13px;}
+table.list th{
+  text-align:left; font-size:11.5px; font-weight:600; color:var(--mut);
+  padding:11px 14px; background:#FAFAF6; border-bottom:1px solid var(--line); white-space:nowrap;
+}
+table.list td{padding:12px 14px; border-bottom:1px solid var(--line); vertical-align:middle;}
+table.list tr:last-child td{border-bottom:none;}
+table.list tr.sub td{background:#FCFCFA;}
+table.list tr.sub td:first-child{padding-left:14px;}
+
+.shopcell{display:flex; align-items:center; gap:9px; min-width:0;}
+.shopcell .nm{font-weight:700; font-size:13.5px; white-space:nowrap;}
+.genre{font-size:11px; color:var(--mut); white-space:nowrap;}
+.pgcount{
+  font-size:10.5px; font-weight:700; color:var(--sub); background:var(--sub-soft);
+  border:1px solid var(--sub-line); border-radius:6px; padding:2px 7px; white-space:nowrap;
+}
+/* サブページ行のぶら下がり表現。色だけに頼らず字面でも分かるようにする */
+.branch{
+  display:inline-flex; align-items:center; gap:7px; padding-left:16px; position:relative;
+}
+.branch::before{
+  content:''; position:absolute; left:2px; top:-14px; bottom:50%;
+  width:9px; border-left:1.5px solid var(--sub-line); border-bottom:1.5px solid var(--sub-line);
+  border-bottom-left-radius:5px;
+}
+.pgbadge{
+  display:inline-flex; align-items:center; justify-content:center; min-width:22px; height:22px;
+  border-radius:6px; font-size:11px; font-weight:700; padding:0 6px; flex:0 0 auto;
+}
+.pgbadge.main{background:#E8F0EC; color:var(--teal); border:1px solid #CBDDD4;}
+.pgbadge.sub{background:var(--sub-soft); color:var(--sub); border:1px solid var(--sub-line);}
+
+.stat{display:inline-flex; align-items:center; gap:6px; font-size:12.5px; font-weight:600; white-space:nowrap;}
+.stat svg{width:14px; height:14px; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round;}
+.stat.ok{color:var(--ok);}      .stat.ok svg{stroke:var(--ok);}
+.stat.exp{color:var(--warn);}   .stat.exp svg{stroke:var(--warn);}
+.stat.none{color:var(--mut);}   .stat.none svg{stroke:var(--mut);}
+.sync{font-size:12.5px; color:var(--ink); white-space:nowrap;}
+
+/* トグル（現行画面と同じ見た目） */
+.sw{display:inline-flex; align-items:center; gap:8px; cursor:pointer;}
+.sw input{position:absolute; opacity:0; width:0; height:0;}
+.sw i{
+  width:38px; height:21px; border-radius:999px; background:#D5D5CD; position:relative;
+  flex:0 0 auto; transition:background .15s;
+}
+.sw i::after{
+  content:''; position:absolute; top:2px; left:2px; width:17px; height:17px; border-radius:50%;
+  background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.25); transition:left .15s;
+}
+.sw input:checked + i{background:var(--teal);}
+.sw input:checked + i::after{left:19px;}
+.sw input:focus-visible + i{outline:2px solid var(--teal-3); outline-offset:2px;}
+.sw span{font-size:11.5px; color:var(--mut); font-weight:600;}
+
+table.list td:last-child{width:1%; white-space:nowrap;}
+.acts{display:flex; gap:2px; justify-content:flex-end; flex-wrap:nowrap;}
+.lnk{
+  display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:600;
+  color:var(--mut); border:1px solid transparent; border-radius:8px; padding:5px 8px; white-space:nowrap;
+}
+.lnk:hover{color:var(--teal-3); background:#F2F6F4;}
+.lnk svg{width:13px; height:13px; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round;}
+.lnk.key{color:var(--teal-3);}
+.lnk.key.hasWarn{color:var(--danger);}
+.lnk.key.hasWarn:hover{background:var(--danger-soft);}
+.warndot{
+  width:7px; height:7px; border-radius:50%; background:var(--danger); flex:0 0 auto;
+}
+
+/* ---------- 紐付けモーダル ---------- */
+.mask2{
+  position:fixed; inset:0; background:rgba(20,30,28,.45); z-index:100;
+  display:none; align-items:center; justify-content:center; padding:20px;
+}
+.mask2.show{display:flex;}
+.big{
+  background:#fff; width:100%; max-width:1000px; max-height:92vh;
+  border-radius:var(--r-lg); display:flex; flex-direction:column; overflow:hidden;
+}
+.big .bh{padding:18px 20px 0; flex:0 0 auto;}
+.big .bh .row1{display:flex; align-items:flex-start; gap:10px;}
+.big .bh h3{
+  margin:0; font-size:17px; display:flex; align-items:center; gap:9px;
+}
+.big .bh h3 svg{width:19px; height:19px; stroke:var(--teal); fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round;}
+.big .bh .x{margin-left:auto; color:var(--mut); font-size:19px; width:30px; height:30px; border-radius:8px;}
+.big .bh .x:hover{background:var(--muted-bg); color:var(--ink);}
+.big .bh .sub{font-size:12.5px; color:var(--mut); margin:4px 0 0;}
+.big .bb{padding:0 20px; overflow-y:auto; flex:1 1 auto;}
+.big .bf{
+  padding:13px 20px calc(13px + env(safe-area-inset-bottom));
+  border-top:1px solid var(--line); background:#FAFAF6; flex:0 0 auto;
+  display:flex; align-items:center; gap:9px; flex-wrap:wrap;
+}
+.big .bf .spacer{flex:1;}
+.big .bf .hint{font-size:11.5px; color:var(--mut);}
+
+/* ---- 連携ページ欄 ---- */
+.pgsec{margin:16px 0 0;}
+.pgsec .hd{display:flex; align-items:center; gap:9px; margin-bottom:9px; flex-wrap:wrap;}
+.pgsec .hd h4{margin:0; font-size:13px; letter-spacing:.02em;}
+.pgsec .hd .n{font-size:11.5px; color:var(--mut);}
+.pgsec .hd .add{margin-left:auto;}
+.btn.sm{height:34px; padding:0 12px; font-size:12.5px; border-radius:9px;}
+.btn.sm svg{width:14px; height:14px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round;}
+
+.pgcards{display:flex; gap:10px; flex-wrap:wrap;}
+.pgcard{
+  flex:1 1 280px; min-width:260px; border:1px solid var(--line); border-radius:var(--r);
+  padding:12px 13px; background:#FCFCFA; position:relative;
+}
+.pgcard.isSub{border-color:var(--sub-line); background:#FBFAFE;}
+.pgcard .t{display:flex; align-items:center; gap:8px; margin-bottom:6px;}
+.pgcard .t .nm{font-weight:700; font-size:13.5px; line-height:1.35;}
+.pgcard .meta{font-size:11.5px; color:var(--mut); line-height:1.65;}
+.pgcard .meta .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--ink);}
+.pgcard .foot{display:flex; gap:4px; margin-top:8px; flex-wrap:wrap;}
+.pgcard .foot .lnk{padding:4px 8px; font-size:11.5px;}
+.pgcard .foot .lnk.del{color:var(--danger);}
+.pgcard .foot .lnk.del:hover{background:var(--danger-soft);}
+
+/* ---- 追加連携フォーム ---- */
+.addbox{
+  border:1px dashed var(--gold); background:#FFFDF7; border-radius:var(--r);
+  padding:14px; margin-top:10px; display:none;
+}
+.addbox.show{display:block;}
+.addbox h5{margin:0 0 3px; font-size:13px;}
+.addbox .cap{font-size:11.5px; color:var(--mut); margin:0 0 12px; line-height:1.6;}
+.addgrid{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+@media (max-width:700px){ .addgrid{grid-template-columns:1fr;} }
+.fld label{display:block; font-size:11.5px; color:var(--mut); margin-bottom:4px;}
+.fld input, .fld select{
+  width:100%; height:40px; border:1px solid var(--line); border-radius:10px;
+  background:#fff; padding:0 10px;
+}
+.fld .pw{position:relative;}
+.fld .pw input{padding-right:40px;}
+.fld .pw .eye{
+  position:absolute; right:6px; top:6px; width:28px; height:28px; border-radius:7px;
+  display:flex; align-items:center; justify-content:center; color:var(--mut);
+}
+.fld .pw .eye:hover{background:var(--muted-bg);}
+.fld .pw .eye svg{width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:1.8;}
+.addopts{display:flex; gap:18px; flex-wrap:wrap; margin:12px 0 0;}
+.ck{display:inline-flex; align-items:center; gap:8px; font-size:12.5px; cursor:pointer;}
+.ck input{width:17px; height:17px; accent-color:var(--teal); flex:0 0 auto;}
+.addacts{display:flex; gap:8px; margin-top:13px; align-items:center;}
+.addacts .msg{font-size:12px; color:var(--mut); margin-left:auto;}
+.addacts .msg.err{color:var(--danger);}
+
+/* ---- タブ ---- */
+.tabs{display:flex; gap:2px; border-bottom:1px solid var(--line); margin:20px 0 0;}
+.tabs button{
+  padding:9px 15px; font-size:13.5px; font-weight:600; color:var(--mut);
+  border-bottom:2.5px solid transparent; display:flex; align-items:center; gap:7px;
+}
+.tabs button .cnt{
+  font-size:10.5px; font-weight:700; background:var(--muted-bg); color:var(--mut);
+  border-radius:999px; padding:1px 7px;
+}
+.tabs button.on{color:var(--ink); border-bottom-color:var(--teal);}
+.tabs button.on .cnt{background:#E8F0EC; color:var(--teal);}
+.tabs button .warnpip{
+  width:7px; height:7px; border-radius:50%; background:var(--danger);
+}
+
+/* ---- 絞り込みチップ ---- */
+.chips{display:flex; gap:7px; flex-wrap:wrap; margin:12px 0 10px; align-items:center;}
+.chips .lb{font-size:11.5px; color:var(--mut); margin-right:2px;}
+.chip{
+  font-size:12px; font-weight:600; color:var(--mut); border:1px solid var(--line);
+  border-radius:999px; padding:5px 12px; background:#fff; white-space:nowrap;
+}
+.chip.on{background:var(--teal); border-color:var(--teal); color:#fff;}
+.chip.warn{color:var(--danger); border-color:rgba(196,52,43,.4);}
+.chip.warn.on{background:var(--danger); border-color:var(--danger); color:#fff;}
+
+/* ---- マトリクス ---- */
+.mxwrap{border:1px solid var(--line); border-radius:var(--r); overflow:auto; margin-bottom:16px;}
+table.mx{width:100%; border-collapse:separate; border-spacing:0; font-size:13px; min-width:640px;}
+table.mx th{
+  text-align:left; font-size:11.5px; font-weight:600; color:var(--mut);
+  padding:9px 12px; background:#FAFAF6; border-bottom:1px solid var(--line); vertical-align:bottom;
+  position:sticky; top:0; z-index:2;
+}
+table.mx th.pgcol{border-left:1px solid var(--line); min-width:210px;}
+table.mx th.pgcol .ph{display:flex; align-items:center; gap:7px;}
+table.mx th.pgcol .ph .nm{color:var(--ink); font-size:12.5px; font-weight:700; line-height:1.3;}
+table.mx th.pgcol .ph .menu{
+  margin-left:auto; width:24px; height:24px; border-radius:6px; color:var(--mut);
+  display:flex; align-items:center; justify-content:center; font-size:11px;
+}
+table.mx th.pgcol .ph .menu:hover{background:#EDEDE6; color:var(--ink);}
+table.mx th.pgcol .gn{font-size:10.5px; color:var(--mut); font-weight:500; margin-top:2px;}
+table.mx th.stcol{min-width:118px;}
+
+table.mx td{padding:8px 12px; border-bottom:1px solid var(--line); vertical-align:middle;}
+table.mx td.pgcol{border-left:1px solid var(--line);}
+table.mx tr:last-child td{border-bottom:none;}
+table.mx tr.unset td{background:#FEF8F7;}
+
+.rowname{font-weight:600; font-size:13px;}
+.rownote{font-size:11px; color:var(--mut);}
+
+.cellsel{
+  width:100%; height:38px; border:1px solid var(--line); border-radius:9px; background:#fff;
+  padding:0 8px; font-size:12.5px; color:var(--ink); max-width:230px;
+}
+.cellsel.isNone{color:var(--mut); background:#F7F7F2;}
+.cellsel.isUnset{border-color:var(--danger); background:#FFF6F5; color:var(--danger); font-weight:600;}
+.cellsel:focus-visible{outline:2px solid var(--teal-3); outline-offset:1px;}
+
+.sm-tag{
+  font-size:10.5px; font-weight:700; border-radius:6px; padding:2px 8px;
+  white-space:nowrap; display:inline-block;
+}
+.sm-tag.both{background:#E8F0EC; color:var(--teal); border:1px solid #CBDDD4;}
+.sm-tag.one{background:var(--info-soft); color:var(--info); border:1px solid rgba(47,109,168,.25);}
+.sm-tag.muted{background:var(--muted-bg); color:var(--mut); border:1px solid var(--line);}
+.sm-tag.warn{background:#fff; color:var(--danger); border:1px solid rgba(196,52,43,.45);}
+
+.empty{padding:26px 14px; text-align:center; color:var(--mut); font-size:12.5px;}
+
+/* 列ヘッダーの一括メニュー */
+.popmenu{
+  position:absolute; z-index:120; background:#fff; border:1px solid var(--line);
+  border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.16); padding:5px; min-width:212px; display:none;
+}
+.popmenu.show{display:block;}
+.popmenu button{
+  display:block; width:100%; text-align:left; font-size:12.5px; padding:8px 10px;
+  border-radius:7px; color:var(--ink);
+}
+.popmenu button:hover{background:var(--muted-bg);}
+.popmenu .sep{height:1px; background:var(--line); margin:4px 0;}
+.popmenu .cap{font-size:10.5px; color:var(--mut); padding:4px 10px 6px; line-height:1.5;}
+
+/* 未設定の説明 */
+.why{
+  background:var(--muted-bg); border-radius:10px; padding:11px 13px; font-size:11.5px;
+  color:var(--mut); line-height:1.7; margin-bottom:16px;
+}
+.why b{color:var(--ink);}
+.why .k{
+  display:inline-block; border-radius:5px; padding:1px 7px; font-weight:700; font-size:11px;
+  border:1px solid var(--line); background:#fff; color:var(--ink);
+}
+.why .k.ng{border-color:rgba(196,52,43,.45); color:var(--danger);}
+
+@media (max-width:860px){
+  .big{max-width:100%; max-height:100%; border-radius:0;}
+  .mask2{padding:0;}
+  table.list th.opt, table.list td.opt{display:none;}
+}
+</style>
+</head>
+<body>
+<div id="shell"></div>
+
+<!-- 紐付けモーダル -->
+<div class="mask2" id="mask">
+  <div class="big" role="dialog" aria-modal="true" aria-labelledby="bigTitle">
+    <div class="bh">
+      <div class="row1">
+        <h3 id="bigTitle">
+          <svg viewBox="0 0 24 24"><path d="M10.5 13.5a4 4 0 0 0 5.7 0l2.8-2.8a4 4 0 1 0-5.7-5.7l-1.3 1.3"/><path d="M13.5 10.5a4 4 0 0 0-5.7 0L5 13.3a4 4 0 1 0 5.7 5.7l1.3-1.3"/></svg>
+          HPB(サロンボード)紐付け</h3>
+        <button class="x" id="bigX" aria-label="閉じる">&#x2715;</button>
+      </div>
+      <p class="sub" id="bigSub">—</p>
+    </div>
+
+    <div class="bb">
+      <!-- 連携ページ -->
+      <section class="pgsec">
+        <div class="hd">
+          <h4>連携ページ</h4>
+          <span class="n" id="pgN">—</span>
+          <button class="btn sm ghost add" id="addBtn">
+            <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>追加連携</button>
+        </div>
+        <div class="pgcards" id="pgCards"></div>
+
+        <!-- 追加連携フォーム -->
+        <div class="addbox" id="addBox">
+          <h5>追加連携（HPBページをもう1枚つなぐ）</h5>
+          <p class="cap">サロンボードのログインID・パスワードを入れて認証すると、そのページのスタッフ・メニュー・設備を取得します。<br>
+            取得したあと、下のマトリクスで SalonOne 側と紐付けてください。<b>紐付けが済むまで、このページは重複防止の対象になりません。</b></p>
+          <div class="addgrid">
+            <div class="fld">
+              <label for="apName">ページの呼び名</label>
+              <input id="apName" type="text" placeholder="例）si'se nail &amp; eye 町田">
+            </div>
+            <div class="fld">
+              <label for="apGenre">ジャンル</label>
+              <select id="apGenre">
+                <option>ネイル・アイ</option>
+                <option>ヘア</option>
+                <option>リラク・エステ</option>
+                <option>美容整体</option>
+              </select>
+            </div>
+            <div class="fld">
+              <label for="apId">ログインID</label>
+              <input id="apId" type="text" placeholder="例）CE90112" autocomplete="off">
+            </div>
+            <div class="fld">
+              <label for="apPw">パスワード</label>
+              <div class="pw">
+                <input id="apPw" type="password" autocomplete="new-password">
+                <button class="eye" id="apEye" type="button" aria-label="パスワードを表示">
+                  <svg viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.8"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="addopts">
+            <label class="ck"><input type="checkbox" id="apSync" checked>自動同期をONにする</label>
+            <label class="ck"><input type="checkbox" id="apAcc">自動会計をONにする</label>
+          </div>
+          <div class="addacts">
+            <button class="btn sm solid" id="apGo">認証してマスタ取得</button>
+            <button class="btn sm ghost" id="apCancel">キャンセル</button>
+            <span class="msg" id="apMsg"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 未設定の警告 -->
+      <div id="mxGuard"></div>
+
+      <!-- タブ -->
+      <div class="tabs" id="tabs"></div>
+      <div class="chips" id="chips"></div>
+      <div class="mxwrap"><div id="mxBody"></div></div>
+
+      <div class="why">
+        <b>セルの3状態</b>
+        <span class="k">紐付け済み</span> HPB側のIDと結んである　/
+        <span class="k">出さない</span> このページには載せない（意図的・対応不要）　/
+        <span class="k ng">未設定</span> まだ決めていない<br>
+        <b>未設定だと重複防止が働きません。</b>
+        片方のページに予約が入ったとき、もう一方の「閉じるべき枠」がどれか分からないためです。
+        意図的に載せないなら「出さない」を選んでください。未設定と区別できるようになります。
+      </div>
+    </div>
+
+    <div class="bf">
+      <span class="hint" id="bfHint">—</span>
+      <span class="spacer"></span>
+      <button class="btn ghost" id="bigClose">閉じる</button>
+      <button class="btn solid" id="bigSave">保存する</button>
+    </div>
+  </div>
+</div>
+
+<div class="popmenu" id="popmenu"></div>
+<div class="toast" id="toast" role="status"></div>
+
+<script src="../assets/hpbdata.js"></script>
+<script src="../assets/shell.js"></script>
+<script src="../assets/mockbar.js"></script>
+<script src="./hpb_link.js"></script>
+</body>
+</html>

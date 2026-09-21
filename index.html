@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SalonOne 改善モック｜5画面一覧</title>
+<title>SalonOne 改善モック｜画面一覧</title>
 <!--
 ================================================================================
 モック一覧ページ
@@ -29,7 +29,7 @@ body{background:var(--cream);}
   display:flex; align-items:baseline; gap:10px;
 }
 .sec > h2 .cnt{font-size:11.5px; color:var(--mut); font-weight:500; letter-spacing:0;}
-.sec > .lead{font-size:12.5px; color:var(--mut); margin:0 0 14px;}
+.sec > .lead, .sec .lead{font-size:12.5px; color:var(--mut); margin:0 0 14px;}
 
 .row{display:flex; flex-wrap:wrap; gap:18px; align-items:flex-start;}
 
@@ -122,11 +122,13 @@ body{background:var(--cream);}
 
 <div class="top">
   <div class="logo">Salon<b>One</b> 改善モック</div>
-  <p>勤怠管理（PC／スマホ・管理者／打刻者の4画面）、minimo連携枠のスマホ操作（1画面）、
-     売上ダッシュボード（PC／スマホの2画面）の計7画面。
+  <p><b>A. HPB 2ページ運用</b>（連携・紐付け・予約の重複防止）と
+     <b>B. ネイル／アイの「オフ」とオプションの提案</b>、
+     それに既存の勤怠・minimo連携枠・売上ダッシュボードを合わせた画面一覧です。<br>
      素のHTML＋CSS＋JSで、ビルドも依存ライブラリもなし。下のプレビューは実寸幅で描画したものを縮小しています。<br>
      サイドバー・上部バーは現行画面のスクリーンショットに合わせてあります。<br>
-     右下の<b>「モック設定」</b>から、ロール／GPSのオンオフ／休憩のオンオフ／固定残業の時間を切り替えて確認できます。</p>
+     右下の<b>「モック設定」</b>から、ロールや各種オンオフを切り替えて確認できます
+     （予約表では<b>「HPB 2ページ運用」</b>をOFFにすると現行の見え方と比較できます）。</p>
 </div>
 
 <div class="wrap">
@@ -140,6 +142,100 @@ body{background:var(--cream);}
     <p class="note">各画面のカード右上の「開く」で個別に表示、「URL」でその画面のリンクだけをコピーできます。<br>
       スマホ幅の画面（打刻・minimo連携・売上のスマホ表示）は、URLを端末に送って<b>実機で開く</b>と本来の見え方になります。</p>
   </div>
+
+  <h2 style="font-size:15px;letter-spacing:.06em;color:var(--teal);margin:6px 0 4px;">A. HPB 2ページ運用</h2>
+  <p style="font-size:12.5px;color:var(--mut);margin:0 0 16px;max-width:900px;line-height:1.7">
+    1つの店舗がホットペッパービューティのページを2枚持つ場合。ページごとにサロンボードのログインが別なので、
+    連携も紐付けも2本必要になります。<b>最優先は予約の重複を止めること</b>で、
+    片方に予約が入ったら、もう一方の同じ枠を自動で閉じます（常時有効・ON/OFFなし）。</p>
+
+  <section class="sec">
+    <h2>HPB連携（設定）<span class="cnt">1画面 — PC</span></h2>
+    <p class="lead">追加連携でページを増やし、スタッフ／メニュー／設備をマトリクスで紐付ける。未設定だと重複防止が効かない。</p>
+    <div class="row">
+      <div class="shot">
+        <div class="bar"><span class="nm">HPB連携・PC</span><span class="px">1280px</span>
+          <a class="open" href="screens/hpb_link.html" target="_blank" rel="noopener">開く</a></div>
+        <div class="path">/settings/external/hpb</div>
+        <div class="desc">「HPB紐付け設定」から追加連携。行=SalonOne側／列=連携ページのマトリクス。</div>
+        <div class="view pc"><iframe src="screens/hpb_link.html" title="HPB連携 PC"></iframe></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>予約表（PC）<span class="cnt">1画面 — PC</span></h2>
+    <p class="lead">どちらのページから入った予約かを色と斜線レールで区別し、重複が起きていたら警告する。</p>
+    <div class="row">
+      <div class="shot">
+        <div class="bar"><span class="nm">予約表・PC</span><span class="px">1280px</span>
+          <a class="open" href="screens/schedule_pc.html" target="_blank" rel="noopener">開く</a></div>
+        <div class="path">/schedule</div>
+        <div class="desc">「表示するページ」を1枚に絞ると、自動で閉じた枠が斜線で出ます。</div>
+        <div class="view pc"><iframe src="screens/schedule_pc.html" title="予約表 PC"></iframe></div>
+      </div>
+    </div>
+  </section>
+
+  <h2 style="font-size:15px;letter-spacing:.06em;color:var(--teal);margin:26px 0 4px;">B. オフ と オプションの提案</h2>
+  <p style="font-size:12.5px;color:var(--mut);margin:0 0 16px;max-width:900px;line-height:1.7">
+    ネイルとまつげエクステは、付いているものを外すか（オフ）で所要時間と料金が変わります。
+    いまはメニュー名に「自店オフ無料」などと書いて運用していますが、システムは何も知りません。
+    <b>オフはメニューごとに必須で聞き、オプションは強制リンクごとに任意で提案する</b>形にしました。
+    どちらも所要時間を変えるので、<b>日時を選ぶ前</b>に聞きます。</p>
+
+  <section class="sec">
+    <h2>メニュー設定<span class="cnt">1画面 — PC</span></h2>
+    <p class="lead">メニュー編集に「オフの確認」を追加。タブ「オフ・オプション」にマスタを置く。</p>
+    <div class="row">
+      <div class="shot">
+        <div class="bar"><span class="nm">メニュー設定・PC</span><span class="px">1280px</span>
+          <a class="open" href="screens/menu_settings.html" target="_blank" rel="noopener">開く</a></div>
+        <div class="path">/settings/menus</div>
+        <div class="desc">編集ボタンからモーダル。設定の結果を「予約フォームでの見え方」で並べて確認できます。</div>
+        <div class="view pc"><iframe src="screens/menu_settings.html" title="メニュー設定 PC"></iframe></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>強制リンク設定<span class="cnt">1画面 — PC</span></h2>
+    <p class="lead">強制リンクごとに「予約時にオプションを提案する」を設定。右にお客様の画面のプレビュー。</p>
+    <div class="row">
+      <div class="shot">
+        <div class="bar"><span class="nm">強制リンク設定・PC</span><span class="px">1280px</span>
+          <a class="open" href="screens/forcelink_settings.html" target="_blank" rel="noopener">開く</a></div>
+        <div class="path">/settings/templates/force-links</div>
+        <div class="desc">「編集」で詳細へ。チェックを変えると右のプレビューがその場で変わります。</div>
+        <div class="view pc"><iframe src="screens/forcelink_settings.html" title="強制リンク設定 PC"></iframe></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>予約フォーム（強制リンク・お客様向け）<span class="cnt">1画面 — スマホ / PC 兼用</span></h2>
+    <p class="lead">メニュー → オフ（必須）→ オプション（任意）→ 日時。オフを選ぶまで日時は開かない。</p>
+    <div class="row">
+      <div class="shot">
+        <div class="bar"><span class="nm">予約フォーム・スマホ</span><span class="px">390px</span>
+          <a class="open" href="screens/booking_form.html" target="_blank" rel="noopener">開く</a></div>
+        <div class="path">/f/:slug</div>
+        <div class="desc">オフやオプションで所要時間が延びると、入らなくなった枠が△になります。</div>
+        <div class="view sp"><iframe src="screens/booking_form.html" title="予約フォーム スマホ"></iframe></div>
+      </div>
+      <div class="shot">
+        <div class="bar"><span class="nm">予約フォーム・PC幅</span><span class="px">1280px</span>
+          <a class="open" href="screens/booking_form.html" target="_blank" rel="noopener">開く</a></div>
+        <div class="path">/f/:slug</div>
+        <div class="desc">同じ1ファイル。画面下の「表示するフォーム」で、提案あり／なしを切り替えられます。</div>
+        <div class="view pc"><iframe src="screens/booking_form.html" title="予約フォーム PC"></iframe></div>
+      </div>
+    </div>
+  </section>
+
+  <h2 style="font-size:15px;letter-spacing:.06em;color:var(--teal);margin:26px 0 4px;">C. 既存の改善（勤怠・minimo連携枠・売上）</h2>
+  <p style="font-size:12.5px;color:var(--mut);margin:0 0 16px;max-width:900px;line-height:1.7">
+    前回までに作った7画面です。内容は変えていません。</p>
 
   <section class="sec">
     <h2>勤怠管理（管理者）<span class="cnt">2画面 — PC / スマホ</span></h2>
@@ -221,7 +317,9 @@ body{background:var(--cream);}
   <div class="legend">
     <b>ファイル構成</b>
     <ul>
-      <li><code>screens/</code> … 4ファイル。勤怠の管理者／打刻者と売上は、それぞれ1ファイルでPC・スマホ両対応</li>
+      <li><code>screens/</code> … 9ファイル。勤怠・売上・予約フォームは、それぞれ1ファイルでPC・スマホ両対応</li>
+      <li><code>assets/hpbdata.js</code> … HPB連携のダミーデータ（連携ページ・紐付け・予約・ページ間ブロック）</li>
+      <li><code>assets/menudata.js</code> … メニュー／オフ／オプション／強制リンクのダミーデータ</li>
       <li><code>assets/salesdata.js</code> … 売上のダミーデータ。日次・スタッフ別の合計は必ず一致するようにしてあります</li>
       <li><code>assets/shell.js</code> / <code>shell.css</code> … サイドバー＋上部バー。移植先は <code>app/(admin)/layout.tsx</code> 相当</li>
       <li><code>assets/tokens.css</code> … 色などのCSS変数だけ。<code>tailwind.config</code> の theme に1対1で対応する</li>

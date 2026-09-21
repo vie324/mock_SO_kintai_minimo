@@ -44,6 +44,8 @@ window.Shell = (function () {
     globe:'<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c4 4.5 4 12 0 17M12 3.5c-4 4.5-4 12 0 17"/>',
     layers:'<path d="M12 3.5l8.5 4.5-8.5 4.5L3.5 8z"/><path d="M3.5 12.5L12 17l8.5-4.5M3.5 16.5L12 21l8.5-4.5"/>',
     shield:'<path d="M12 3l7 2.8v5.4c0 4.4-3 8-7 9.8-4-1.8-7-5.4-7-9.8V5.8z"/>',
+    link:'<path d="M10.5 13.5a4 4 0 0 0 5.7 0l2.8-2.8a4 4 0 1 0-5.7-5.7l-1.3 1.3"/><path d="M13.5 10.5a4 4 0 0 0-5.7 0L5 13.3a4 4 0 1 0 5.7 5.7l1.3-1.3"/>',
+    form:'<rect x="4" y="3" width="16" height="18" rx="2.2"/><path d="M8 8h8M8 12h8M8 16h4"/>',
   };
   const icon = k => '<svg viewBox="0 0 24 24">' + (I[k] || '') + '</svg>';
 
@@ -72,10 +74,24 @@ window.Shell = (function () {
             { id:'time-tracking', label:'勤怠管理', ic:'stop', lv:3 },
         ]},
     ]},
-    { id:'menucfg',   label:'メニュー設定',      ic:'list' },
-    { id:'tplcfg',    label:'テンプレート設定',  ic:'doc' },
-    { id:'shiftcfg',  label:'シフト設定',        ic:'clock' },
-    { id:'extcfg',    label:'外部連携設定',      ic:'globe' },
+    { id:'menucfg',   label:'メニュー設定',      ic:'list', group:true, children:[
+        { id:'menu-settings', label:'メニュー設定', ic:'list', lv:2 },
+    ]},
+    { id:'tplcfg',    label:'テンプレート設定',  ic:'doc', group:true, children:[
+        { id:'forcelink',  label:'強制リンク',   ic:'link', lv:2 },
+        { id:'remind',     label:'リマインド',   ic:'bell', lv:2 },
+        { id:'agreement',  label:'契約同意書',   ic:'doc',  lv:2 },
+        { id:'interview',  label:'問診票',       ic:'form', lv:2 },
+    ]},
+    { id:'shiftcfg',  label:'シフト設定',        ic:'clock', group:true, children:[
+        { id:'attendance-sheet', label:'出勤表', ic:'cal', lv:2 },
+    ]},
+    { id:'extcfg',    label:'外部連携設定',      ic:'globe', group:true, children:[
+        { id:'line-link',  label:'LINE連携',   ic:'chat',   lv:2 },
+        { id:'hpb-link',   label:'HPB連携',    ic:'globe',  lv:2 },
+        { id:'minimo-link',label:'Minimo連携', ic:'mail',   lv:2 },
+        { id:'meta-link',  label:'Meta計測',   ic:'up',     lv:2 },
+    ]},
     { id:'fixcfg',    label:'定型設定',          ic:'layers' },
     { id:'permcfg',   label:'権限設定',          ic:'shield', group:true, children:[
         { id:'permmatrix', label:'権限マトリックス', ic:'shield', lv:2 },
@@ -118,7 +134,11 @@ window.Shell = (function () {
   const LINKS = {
     'punch':'kintai_punch.html',
     'time-tracking':'kintai_admin.html',
-    'schedule':'minimo_slots.html',
+    'schedule':'schedule_pc.html',
+    'sales':'sales_dashboard.html',
+    'hpb-link':'hpb_link.html',
+    'menu-settings':'menu_settings.html',
+    'forcelink':'forcelink_settings.html',
   };
 
   const PICKERS =

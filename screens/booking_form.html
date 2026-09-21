@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>si'se｜期間限定／特別予約フォーム</title>
+<!--
+================================================================================
+[公開予約フォーム（強制リンク）]  オフの選択とオプションの提案
+   → 移植先: /f/:slug（お客様向け・ログイン不要）
+================================================================================
+■ 画面の順番 ★ここが要点
+
+      メニュー  →  オフ（必須）  →  オプション（任意）  →  日時  →  お客様情報
+
+  オフもオプションも所要時間を足す。所要時間が決まらないと空き枠を計算できないので、
+  必ず日時より前に置く。日時のあとに置くと、選び直すたびに枠を取り直すことになり、
+  「さっき空いていた枠が無くなった」という一番嫌な体験が起きる。
+
+  ホットペッパーも同じ順番（STEP1 クーポン・メニューを選ぶ → STEP2 日時を指定する）で、
+  オフの選択は STEP1 の中にある。画像4がその画面。
+
+■ オフを選ぶまで日時を開けない
+  オフ未選択のあいだ、日時の欄はロックして理由を書く。
+  ここを開けてしまうと、所要時間が確定していない状態で枠を押さえることになる。
+
+■ 所要時間が変わったことを必ず知らせる
+  オフやオプションを足すと、さっきまで ○ だった枠が × になる。
+  黙って消すと壊れているように見えるので、
+  「所要時間が◯分になったため△件が埋まりました」と明示する。
+
+■ オフとオプションの出し分け
+    オフ       … メニュー側の設定（off_set_id）。必須。選ばないと次へ進めない
+    オプション … 強制リンク側の設定（recommend_options）。既定は任意
+  どちらの設定もこの画面がそのまま反映する。設定画面は
+    メニュー設定        menu_settings.html
+    強制リンク設定      forcelink_settings.html
+
+■ 現行運用との違い
+  いまはオフの条件をメニュー名に書いている（「ご新規様/自店オフ無料」など）。
+  お客様は自己申告で正しいメニューを選ぶ必要があり、間違えると当日揉める。
+  選択式にすれば、他店オフの方には最初から正しい料金と時間が出る。
+
+■ データ
+    予約に off_choice_id と option_ids[] を持たせる。
+    予約表の枠の長さ・会計の明細は、この2つを足した合計で作る。
+
+■ 確認したいこと
+  ・オフの選択肢に画像や説明文を出せるようにするか（他店オフの判断が難しい）
+  ・オプションを何件まで出すか。多いと離脱する
+  ・キャンセル料の規定にオフ・オプションぶんを含めるか
+================================================================================
+-->
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/base.css">
+<style>
+:root{
+  --lime:#7DC24B; --lime-d:#5FA733; --lime-soft:#F1F9EA;
+  --sub:#4A3AA7; --sub-soft:#EEEBFA; --sub-line:#C9C1EE;
+}
+body{background:#EFEFEA; font-size:15px;}
+
+.page{max-width:720px; margin:0 auto; padding:22px 14px 60px;}
+
+/* ---------- ヘッダー ---------- */
+.brand{text-align:center; margin-bottom:18px;}
+.brand .b{font-size:20px; font-weight:700; letter-spacing:.06em;}
+.brand .s{font-size:13px; color:var(--mut); margin-top:2px;}
+.brand h1{
+  font-size:23px; color:var(--lime-d); margin:16px 0 0; letter-spacing:.02em;
+}
+
+/* ---------- カード ---------- */
+.sheet{background:#fff; border-radius:18px; padding:22px 20px 24px; box-shadow:0 2px 14px rgba(0,0,0,.05);}
+@media (max-width:520px){ .sheet{padding:18px 14px 20px; border-radius:14px;} }
+
+.steps{display:flex; align-items:center; justify-content:center; gap:4px; margin-bottom:24px;}
+.steps .st{text-align:center; width:66px;}
+.steps .st .c{
+  width:36px; height:36px; border-radius:50%; background:#E4E4DC; color:var(--mut);
+  display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:700; margin:0 auto 4px;
+}
+.steps .st.on .c{background:var(--lime); color:#fff;}
+.steps .st .l{font-size:11.5px; color:var(--mut);}
+.steps .st.on .l{color:var(--ink); font-weight:600;}
+.steps .bar{height:1.5px; background:#E4E4DC; flex:1; max-width:78px; margin-bottom:20px;}
+
+.sec{margin-bottom:26px;}
+.sec > .h{
+  font-size:15px; font-weight:700; border-left:4px solid var(--lime); padding-left:9px;
+  margin-bottom:12px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+}
+.req{font-size:10.5px; font-weight:700; color:#fff; background:#E0483C; border-radius:4px; padding:2px 6px;}
+.any{font-size:10.5px; font-weight:700; color:var(--mut); background:var(--muted-bg); border:1px solid var(--line); border-radius:4px; padding:1px 6px;}
+.sec > .note{font-size:12px; color:var(--mut); line-height:1.7; margin:-4px 0 11px;}
+
+/* ---------- 選択肢 ---------- */
+.opt{
+  display:flex; align-items:center; gap:11px; width:100%; text-align:left;
+  border:1.5px solid var(--line); border-radius:12px; background:#fff;
+  padding:13px 14px; margin-bottom:9px; cursor:pointer;
+}
+.opt:hover{border-color:#BFD9A8;}
+.opt.on{border-color:var(--lime); background:var(--lime-soft);}
+.opt .r{
+  width:19px; height:19px; border-radius:50%; border:2px solid #C3CBC9; flex:0 0 auto; position:relative;
+}
+.opt .r.sq{border-radius:5px;}
+.opt.on .r{border-color:var(--lime-d);}
+.opt.on .r::after{
+  content:''; position:absolute; inset:3px; border-radius:50%; background:var(--lime-d);
+}
+.opt.on .r.sq::after{border-radius:2px;}
+.opt .tx{flex:1; min-width:0;}
+/* span のままだと補足が見出しと地続きに読めるので、どちらもブロックにする */
+.opt .nm{display:block; font-size:14px; font-weight:600; line-height:1.45;}
+.opt .de{display:block; font-size:11.5px; color:var(--mut); line-height:1.6; margin-top:3px;}
+.opt .pz{
+  font-size:13px; font-weight:700; font-variant-numeric:tabular-nums; white-space:nowrap; text-align:right;
+}
+.opt .pz .m{display:block; font-size:11px; color:var(--mut); font-weight:500;}
+.opt .pz.free{color:var(--lime-d);}
+.opt.disabled{opacity:.5; cursor:not-allowed;}
+
+.locked{
+  border:1.5px dashed var(--line); border-radius:12px; padding:18px 16px; text-align:center;
+  background:#FAFAF6; color:var(--mut); font-size:13px; line-height:1.7;
+}
+.locked b{color:var(--ink);}
+.locked .ic{
+  width:34px; height:34px; border-radius:50%; background:#EDEDE6; margin:0 auto 8px;
+  display:flex; align-items:center; justify-content:center;
+}
+.locked .ic svg{width:17px; height:17px; stroke:var(--mut); fill:none; stroke-width:1.9; stroke-linecap:round;}
+
+/* ---------- 合計 ---------- */
+.total{
+  background:var(--lime-soft); border:1.5px solid #CBE7B5; border-radius:12px;
+  padding:13px 15px; margin-bottom:18px;
+}
+.total .ln{display:flex; justify-content:space-between; font-size:12.5px; color:#3F6B28; padding:3px 0;}
+.total .ln.sum{
+  border-top:1px solid #CBE7B5; margin-top:7px; padding-top:9px; font-size:15px; font-weight:700; color:var(--ink);
+}
+.total .ln .v{font-variant-numeric:tabular-nums;}
+.total .dl{font-size:11.5px; color:var(--mut);}
+
+/* 所要時間が変わったときの知らせ */
+.changed{
+  display:flex; gap:9px; align-items:flex-start; background:#FFFDF7; border:1px solid var(--gold);
+  border-radius:11px; padding:10px 12px; margin-bottom:14px; font-size:12px; line-height:1.7;
+}
+.changed .i{
+  width:19px; height:19px; border-radius:50%; background:var(--gold); color:#fff; flex:0 0 auto;
+  display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700;
+}
+.changed b{color:#8A6D2F;}
+
+/* ---------- カレンダー ---------- */
+.calnav{display:flex; align-items:center; gap:10px; margin-bottom:10px;}
+.calnav button{
+  width:40px; height:40px; border:1px solid var(--line); border-radius:11px; background:#fff;
+  font-size:16px; color:var(--mut);
+}
+.calnav .t{flex:1; text-align:center; font-size:16px; font-weight:700; font-variant-numeric:tabular-nums;}
+.calwrap{border:1px solid var(--line); border-radius:12px; overflow:auto; max-height:360px;}
+table.cal{width:100%; border-collapse:collapse; font-size:13px; min-width:430px;}
+table.cal th{
+  position:sticky; top:0; background:#fff; z-index:2; padding:9px 4px; font-size:12px;
+  border-bottom:1px solid var(--line); font-weight:700;
+}
+table.cal th.sat{color:#2F6DA8;} table.cal th.sun{color:#C4342B;}
+table.cal th small{display:block; font-size:10.5px; font-weight:500; color:var(--mut);}
+table.cal td{
+  padding:0; border-bottom:1px solid #F1F1EA; text-align:center; height:38px;
+}
+table.cal td.tm{
+  font-size:12.5px; font-weight:700; color:var(--mut); width:70px;
+  position:sticky; left:0; background:#fff; border-right:1px solid var(--line); font-variant-numeric:tabular-nums;
+}
+table.cal tr:last-child td{border-bottom:none;}
+.sl{width:100%; height:38px; font-size:15px; color:var(--mut);}
+.sl.ok{color:var(--lime-d); font-weight:700;}
+.sl.ok:hover{background:var(--lime-soft);}
+.sl.ok.on{background:var(--lime); color:#fff;}
+.sl.ng{color:#C9C9BE;}
+.sl.lost{color:#D9B267;}          /* 所要時間が延びて入らなくなった枠 */
+table.cal td.cl{background:#FAFAF6;}
+
+.callegend{font-size:11.5px; color:var(--mut); margin-top:9px; line-height:1.8;}
+.callegend b{color:var(--ink);}
+.callegend .k{display:inline-block; margin-right:12px; white-space:nowrap;}
+
+/* ---------- 入力 ---------- */
+.fld{margin-bottom:13px;}
+.fld label{display:block; font-size:12.5px; font-weight:600; margin-bottom:5px;}
+.fld input, .fld textarea{
+  width:100%; border:1.5px solid var(--line); border-radius:11px; background:#fff;
+  padding:11px 12px; font-size:15px;
+}
+.fld textarea{min-height:76px; resize:vertical; font-family:inherit;}
+
+.gobar{margin-top:8px;}
+.gobtn{
+  width:100%; height:54px; border-radius:12px; background:var(--lime); color:#fff;
+  font-size:16px; font-weight:700; border:none;
+}
+.gobtn:disabled{background:#D5D5CD; color:#fff; cursor:not-allowed;}
+.goerr{font-size:12.5px; color:#C4342B; text-align:center; margin-top:9px; line-height:1.6;}
+
+/* ---------- モックの注記 ---------- */
+.mocknote{
+  max-width:720px; margin:16px auto 0; padding:0 14px; font-size:11.5px; color:#7B8481; line-height:1.8;
+}
+.mocknote .bx{
+  background:#fff; border:1px dashed #C9C9BE; border-radius:12px; padding:12px 14px;
+}
+.mocknote b{color:var(--ink);}
+.mocknote a{color:var(--teal-3); font-weight:700;}
+.mocknote .sel{display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:9px;}
+.mocknote select{
+  height:34px; border:1px solid var(--line); border-radius:8px; background:#fff; padding:0 8px; font-size:12.5px;
+}
+
+/* ---------- 確認・完了 ---------- */
+.conf .ln{display:flex; gap:12px; padding:11px 0; border-bottom:1px solid var(--line); font-size:13.5px;}
+.conf .ln:last-child{border-bottom:none;}
+.conf .ln .k{width:110px; flex:0 0 110px; color:var(--mut); font-size:12px;}
+.conf .ln .v{flex:1;}
+.conf .ln .v .sm{font-size:11.5px; color:var(--mut); display:block; margin-top:2px;}
+.done{text-align:center; padding:26px 10px;}
+.done .ic{
+  width:64px; height:64px; border-radius:50%; background:var(--lime-soft); margin:0 auto 14px;
+  display:flex; align-items:center; justify-content:center;
+}
+.done .ic svg{width:30px; height:30px; stroke:var(--lime-d); fill:none; stroke-width:2.4; stroke-linecap:round; stroke-linejoin:round;}
+.done h2{font-size:19px; margin:0 0 8px;}
+.done p{font-size:13.5px; color:var(--mut); line-height:1.8; margin:0;}
+</style>
+</head>
+<body>
+<div class="page" id="page"></div>
+
+<div class="mocknote">
+  <div class="bx">
+    <b>モック用の注記</b>（製品には出ません）<br>
+    この画面は <b>強制リンク</b>（公開予約フォーム）です。出る内容は2か所の設定で決まります。<br>
+    ・オフの選択 … <a href="menu_settings.html">メニュー設定</a> の「オフの確認」（メニューごと・必須）<br>
+    ・オプション … <a href="forcelink_settings.html">強制リンク設定</a> の「オプションの推奨」（フォームごと・任意）
+    <div class="sel">
+      <span>表示するフォーム</span>
+      <select id="flSel"></select>
+      <a href="../index.html">モック一覧へ</a>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script src="../assets/menudata.js"></script>
+<script src="./booking_form.js"></script>
+</body>
+</html>

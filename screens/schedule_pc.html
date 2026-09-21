@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SalonOne｜予約管理（PC）HPB 2ページ運用</title>
+<!--
+================================================================================
+[予約表・PC]  HPBページが2枚あるときの予約表  → 移植先: /schedule（PC）
+================================================================================
+■ このモックの目的
+  1つの店舗がHPBのページを2枚持つと、2枚が互いの予約を知らないまま
+  同じスタッフ・同じ設備の同じ枠を売り続ける。最優先はこの重複を止めること。
+  予約表でやることは2つある。
+
+    (a) どちらのページから入った予約かを、一目で見分けられるようにする
+    (b) 重複が起きていたら気づけるようにする（起きる前に止めるのが本命）
+
+■ (a) サブページ予約の見分け方  ※色だけに依存しない
+
+  ブロックの色は「どこから入った予約か」で決める。
+      本ページ      緑    #2E8B5F
+      サブページ    藍    #4A3AA7 ＋ 左端に斜線のレール
+      minimo        金    #C6A664
+      直接 / 強制リンク  ティール
+      キャンセル    桃 ／ 休憩 灰
+
+  現行画面は色が「新規／予約中」の状態を表しているが、その情報は
+  ブロック内の「新規」「会員」タグと重複している。
+  色は1つの意味にしか使えないので、タグで言えている状態ではなく、
+  タグで言えていない「どのページから来たか」に割り当てた。
+
+  そのうえで色だけに頼らないよう、次を併用する。
+      ・左端の斜線レール（サブページのみ）
+      ・ページバッジ「本」「ネ」の文字
+      ・凡例
+
+■ (b) ページ間ブロック（重複防止）※常時有効・ON/OFFなし
+  片方に予約が入ったら、もう一方の同じ行・同じ時間帯を自動で閉じる。
+  上部の帯に、その日の反映状況を出す。
+
+      反映済み      相手ページの枠は閉じている
+      未反映        次の同期で閉じる（現行10分間隔）。この隙間が重複の発生源
+      ブロック不可  紐付け未設定。閉じるべき枠のIDが分からない ＝ 事故る
+
+  「表示するページ」を1枚に絞ると、そのページのカレンダー（＝HPB側から見た状態）
+  になり、閉じた枠が斜線で出る。ブロックが効いていることを目で確認できる。
+
+■ ダミーデータに入れてある2種類の重複
+  どちらも原因が違うので、出し分けて確認できるようにしてある。
+
+    三浦 17:00–18:30  … 同期ラグ中に両ページへ着信（block.state='pending'）
+                        → 運用で詰めるしかない。同期間隔の短縮が効く
+    下條 11:00–13:00  … サブページが紐付け未設定（block.state='unmapped'）
+                        → 紐付ければ起きない。HPB連携の紐付け設定へ誘導する
+
+■ 実装定数
+  DAY_START=10:00 / DAY_END=20:00 / PX15=22px（短縮表示は13px）
+  時刻は「0:00からの分(int)」で保持し、描画時のみpxへ変換する。
+
+■ 重なりの積み上げ
+  同じ行で時間が重なる予約は、行の中で段に分けて積む（貪欲法）。
+  重ねて描くと、重複しているという一番見せたい事実が隠れる。
+
+■ API案
+  GET  /api/stores/:sid/reservations?date=YYYY-MM-DD        page_id を含めて返す
+  GET  /api/stores/:sid/slot-blocks?date=YYYY-MM-DD
+  POST /api/stores/:sid/hpb-pages/sync                      「今すぐ反映」
+  GET  /api/stores/:sid/reservation-conflicts?date=YYYY-MM-DD
+
+■ 確認したいこと
+  ・重複を検知したとき、どちらのページの予約を残すかの既定（先着？本ページ優先？）
+  ・ブロックした枠をHPB側でどう表現するか（予約として入れる／受付停止にする）
+  ・同期間隔10分を短縮できるか。ここが重複の発生窓そのもの
+================================================================================
+-->
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/base.css">
+<link rel="stylesheet" href="../assets/shell.css">
+<style>
+:root{
+  --sub:#4A3AA7; --sub-soft:#EEEBFA; --sub-line:#C9C1EE;
+  --main-c:#2E8B5F; --main-soft:#EAF6EE; --main-line:#9CCFB2;
+  --mini:#B4740B; --mini-soft:#FBF2DE; --mini-line:#E0C288;
+  --dir:#106258;  --dir-soft:#E9F1EF;  --dir-line:#A8C6C0;
+}
+.main{padding:16px 18px 40px;}
+
+/* ---------- 見出し・ツールバー ---------- */
+.ph2{display:flex; align-items:center; gap:10px; margin-bottom:12px; flex-wrap:wrap;}
+.ph2 .ic{
+  width:30px; height:30px; border-radius:9px; background:#EAF0EC;
+  display:flex; align-items:center; justify-content:center; flex:0 0 auto;
+}
+.ph2 .ic svg{width:16px; height:16px; stroke:var(--teal); fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round;}
+.ph2 h1{margin:0; font-size:19px;}
+
+.sw{display:inline-flex; align-items:center; gap:7px; cursor:pointer;}
+.sw input{position:absolute; opacity:0; width:0; height:0;}
+.sw i{
+  width:38px; height:21px; border-radius:999px; background:#D5D5CD; position:relative;
+  flex:0 0 auto; transition:background .15s;
+}
+.sw i::after{
+  content:''; position:absolute; top:2px; left:2px; width:17px; height:17px; border-radius:50%;
+  background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.25); transition:left .15s;
+}
+.sw input:checked + i{background:var(--gold);}
+.sw input:checked + i::after{left:19px;}
+.sw input:focus-visible + i{outline:2px solid var(--teal-3); outline-offset:2px;}
+.sw span{font-size:12px; font-weight:600;}
+
+.bar{display:flex; align-items:center; gap:8px; margin-bottom:12px; flex-wrap:wrap;}
+.nav{display:flex; align-items:center; gap:6px;}
+.nav button{
+  height:34px; min-width:34px; padding:0 11px; border:1px solid var(--line); border-radius:9px;
+  background:#fff; font-size:12.5px; font-weight:600;
+}
+.nav .d{font-size:14.5px; font-weight:700; margin-left:4px;}
+.bar .sp{flex:1;}
+.tbtn{
+  height:34px; padding:0 12px; border:1px solid var(--line); border-radius:9px; background:#fff;
+  font-size:12.5px; font-weight:600; display:inline-flex; align-items:center; gap:6px; white-space:nowrap;
+}
+.tbtn svg{width:14px; height:14px; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round;}
+.tbtn.solid{background:var(--teal); color:#fff; border-color:var(--teal);}
+.seg{display:inline-flex; border:1px solid var(--line); border-radius:9px; overflow:hidden; background:#fff;}
+.seg button{height:34px; padding:0 13px; font-size:12.5px; font-weight:600; color:var(--mut);}
+.seg button.on{background:var(--teal); color:#fff;}
+.lastsync{font-size:11px; color:var(--mut); white-space:nowrap;}
+
+/* ---------- ページ切替・ブロック状況 ---------- */
+.pgbar{
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  background:var(--paper); border:1px solid var(--line); border-radius:var(--r);
+  padding:10px 12px; margin-bottom:10px;
+}
+.pgbar .lb{font-size:11.5px; color:var(--mut); font-weight:600;}
+.pgseg{display:inline-flex; gap:6px; flex-wrap:wrap;}
+.pgseg button{
+  height:32px; padding:0 11px; border:1px solid var(--line); border-radius:999px; background:#fff;
+  font-size:12.5px; font-weight:600; color:var(--mut); display:inline-flex; align-items:center; gap:6px;
+}
+.pgseg button.on{background:var(--teal); border-color:var(--teal); color:#fff;}
+.pgseg button.on .pgbadge{background:rgba(255,255,255,.2); color:#fff; border-color:transparent;}
+.pgbadge{
+  display:inline-flex; align-items:center; justify-content:center; min-width:21px; height:20px;
+  border-radius:6px; font-size:10.5px; font-weight:700; padding:0 5px; flex:0 0 auto;
+}
+.pgbadge.main{background:var(--main-soft); color:#1F6A46; border:1px solid var(--main-line);}
+.pgbadge.sub{background:var(--sub-soft); color:var(--sub); border:1px solid var(--sub-line);}
+
+.blockstat{display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-left:auto;}
+.blockstat .shield{
+  display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:700; color:#1F6A46;
+}
+.blockstat .shield svg{width:15px; height:15px; stroke:#1F6A46; fill:none; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round;}
+.blockstat .always{
+  font-size:10px; font-weight:700; letter-spacing:.03em; color:#1F6A46; background:var(--ok-soft);
+  border:1px solid rgba(46,139,95,.4); border-radius:999px; padding:2px 8px;
+}
+.cnt{font-size:11.5px; color:var(--mut); display:inline-flex; align-items:center; gap:5px; white-space:nowrap;}
+.cnt b{font-size:12.5px; color:var(--ink);}
+.cnt .dot{width:8px; height:8px; border-radius:50%; flex:0 0 auto;}
+.cnt .dot.done{background:var(--ok);}
+.cnt .dot.pend{background:var(--warn);}
+.cnt .dot.ng{background:var(--danger);}
+
+/* ---------- 重複アラート ---------- */
+.conflict{
+  display:flex; align-items:flex-start; gap:11px; flex-wrap:wrap;
+  background:var(--danger-soft); border:1px solid rgba(196,52,43,.32);
+  border-radius:var(--r); padding:11px 13px; margin-bottom:10px;
+}
+.conflict .hd{font-size:13px; font-weight:700; color:var(--danger); display:flex; align-items:center; gap:7px; white-space:nowrap;}
+.conflict .hd svg{width:16px; height:16px; stroke:var(--danger); fill:none; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round;}
+.conflict ul{margin:0; padding:0; list-style:none; flex:1; min-width:280px;}
+.conflict li{font-size:12px; color:#8C2F28; line-height:1.75;}
+.conflict li b{color:var(--danger);}
+.conflict li .cause{
+  font-size:10.5px; font-weight:700; border-radius:5px; padding:1px 7px; margin-left:4px;
+  background:#fff; border:1px solid rgba(196,52,43,.35); color:var(--danger);
+}
+.conflict li a{color:var(--danger); font-weight:700;}
+.conflict .jump{
+  font-size:11.5px; font-weight:700; color:var(--danger); border:1px solid rgba(196,52,43,.4);
+  border-radius:8px; padding:5px 10px; background:#fff; white-space:nowrap;
+}
+
+/* ---------- タイムライン ---------- */
+.tlwrap{
+  background:var(--paper); border:1px solid var(--line); border-radius:var(--r);
+  overflow:auto; position:relative;
+}
+.tl{position:relative; min-width:max-content;}
+
+.tlrow{display:flex; border-bottom:1px solid var(--line); position:relative;}
+.tlrow:last-child{border-bottom:none;}
+
+.lane-h{
+  width:186px; flex:0 0 186px; padding:9px 11px; border-right:1px solid var(--line);
+  background:#fff; position:sticky; left:0; z-index:6; display:flex; gap:9px; align-items:flex-start;
+}
+.lane-h .av{
+  width:30px; height:30px; border-radius:50%; background:#EAF0EC; color:var(--teal);
+  display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; flex:0 0 auto;
+}
+.lane-h .nm{font-size:13.5px; font-weight:700; line-height:1.3;}
+.lane-h .sh{font-size:10.5px; color:var(--mut); line-height:1.5;}
+.lane-h .pgs{display:flex; gap:3px; margin-top:3px;}
+.lane-h .warn{
+  font-size:10px; font-weight:700; color:var(--danger); border:1px solid rgba(196,52,43,.4);
+  border-radius:5px; padding:1px 6px; background:#fff; display:inline-block; margin-top:3px;
+}
+
+.track{position:relative; flex:1 1 auto;}
+
+/* 目盛り（ヘッダー） */
+.tlhead{display:flex; border-bottom:1px solid var(--line); background:#FAFAF6; position:sticky; top:0; z-index:8;}
+.tlhead .lane-h{background:#FAFAF6; align-items:center; font-size:11.5px; color:var(--mut); font-weight:600;}
+.tlhead .track{height:30px;}
+.hourlab{
+  position:absolute; top:0; height:30px; display:flex; align-items:center;
+  font-size:11px; color:var(--mut); font-variant-numeric:tabular-nums; padding-left:5px;
+  border-left:1px solid var(--line);
+}
+
+/* 背景の縦罫 */
+.grid{position:absolute; inset:0; pointer-events:none;}
+.grid i{position:absolute; top:0; bottom:0; width:1px; background:var(--line);}
+.grid i.q{background:#F1F1EA;}
+.nowline{position:absolute; top:0; bottom:0; width:2px; background:#E0483C; z-index:5; pointer-events:none;}
+.nowline::before{
+  content:''; position:absolute; top:-4px; left:-3px; width:8px; height:8px; border-radius:50%; background:#E0483C;
+}
+
+/* 予約ブロック */
+.blk{
+  position:absolute; border-radius:8px; border:1.5px solid; background:#fff; overflow:hidden;
+  padding:5px 7px 5px 11px; cursor:pointer; box-sizing:border-box;
+}
+.blk .rail{position:absolute; left:0; top:0; bottom:0; width:5px;}
+/* 名前とバッジは同じ行に流す。バッジを絶対配置にすると長い名前に重なる */
+.blk .top{display:flex; align-items:center; gap:4px; min-width:0;}
+.blk .nm{
+  /* バッジより名前を優先して残す。min-width を切ると名前が丸ごと消える */
+  flex:1 1 auto; min-width:4em; font-size:11.5px; font-weight:700; line-height:1.35;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.blk .mn{font-size:10.5px; color:var(--mut); line-height:1.35; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.blk .tg{display:flex; gap:3px; margin-top:2px; flex-wrap:wrap; overflow:hidden; height:15px;}
+.blk .tg span{
+  font-size:9.5px; font-weight:700; border-radius:4px; padding:0 5px; line-height:15px;
+  background:var(--muted-bg); color:var(--mut); border:1px solid var(--line); white-space:nowrap;
+}
+.blk .tg span.code{background:#fff;}
+.blk .tg span.cf{background:var(--danger); color:#fff; border-color:var(--danger);}
+/* 幅が足りないときは右から欠ける。並び順は 重複 → ページ → 流入元 → 指名 */
+.blk .bdg{flex:0 1 auto; min-width:0; display:flex; gap:2px; overflow:hidden;}
+.blk .bdg span{
+  font-size:9px; font-weight:700; border-radius:4px; padding:0 4px; line-height:15px; color:#fff;
+  white-space:nowrap;
+}
+.blk.compact{padding:4px 6px 4px 11px;}
+.blk.compact .mn, .blk.compact .tg{display:none;}
+
+.blk.p-main{border-color:var(--main-line); background:var(--main-soft);}
+.blk.p-main .rail{background:var(--main-c);}
+.blk.p-main .bdg .pg{background:var(--main-c);}
+
+.blk.p-sub{border-color:var(--sub-line); background:var(--sub-soft);}
+/* 斜線レール。色を見分けられない場合でもサブページだと分かるようにする */
+.blk.p-sub .rail{
+  background:repeating-linear-gradient(135deg, var(--sub) 0 3px, #fff 3px 6px);
+}
+.blk.p-sub .bdg .pg{background:var(--sub);}
+
+.blk.p-mini{border-color:var(--mini-line); background:var(--mini-soft);}
+.blk.p-mini .rail{background:var(--mini);}
+.blk.p-mini .bdg .pg{background:var(--mini);}
+
+.blk.p-dir{border-color:var(--dir-line); background:var(--dir-soft);}
+.blk.p-dir .rail{background:var(--dir);}
+.blk.p-dir .bdg .pg{background:var(--dir);}
+
+.blk.p-break{border-color:#D8D8D0; background:#F3F3EE;}
+.blk.p-break .rail{background:#B9B9AE;}
+.blk.p-break .nm{color:var(--mut);}
+
+/* 重複しているブロック */
+.blk.conf{box-shadow:0 0 0 2.5px var(--danger); border-color:var(--danger);}
+.blk.hidden{display:none;}
+
+/* ブロック（閉じた枠） */
+.blockbar{
+  position:absolute; border-radius:8px; box-sizing:border-box; padding:5px 8px;
+  display:flex; align-items:center; gap:6px; font-size:10.5px; font-weight:700; overflow:hidden;
+}
+.blockbar.done{
+  background:repeating-linear-gradient(135deg,#EDEDE6 0 6px,#F7F7F2 6px 12px);
+  border:1.5px dashed #C9C9BE; color:#78837F;
+}
+.blockbar.pending{
+  background:repeating-linear-gradient(135deg,#FBF0DC 0 6px,#FEF9EE 6px 12px);
+  border:1.5px dashed #D9B267; color:#8A6410;
+}
+.blockbar.unmapped{
+  background:repeating-linear-gradient(135deg,#FBEBEA 0 6px,#FEF6F5 6px 12px);
+  border:1.5px dashed rgba(196,52,43,.55); color:var(--danger);
+}
+.blockbar .t{white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+
+/* そのページに出していない行 */
+.tlrow.notonpage .lane-h{opacity:.55;}
+.offpage{
+  position:absolute; left:10px; top:50%; transform:translateY(-50%);
+  font-size:11.5px; color:var(--mut); background:#fff; border:1px dashed var(--line);
+  border-radius:8px; padding:4px 10px;
+}
+
+/* 行グループ見出し */
+.grouphd{
+  display:flex; align-items:center; gap:9px; padding:7px 12px; background:#F7F7F2;
+  border-bottom:1px solid var(--line); font-size:11.5px; font-weight:700; color:var(--mut);
+  position:sticky; left:0; z-index:7;
+}
+.grouphd .note{font-weight:500; color:var(--mut); font-size:11px;}
+.grouphd button{
+  margin-left:auto; font-size:11.5px; color:var(--teal-3); font-weight:600;
+}
+
+/* ---------- 凡例 ---------- */
+.legend{
+  display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start;
+  background:var(--paper); border:1px solid var(--line); border-radius:var(--r);
+  padding:12px 14px; margin-top:12px; font-size:11.5px; color:var(--mut);
+}
+.legend .grp{display:flex; gap:10px; flex-wrap:wrap; align-items:center;}
+.legend .grp .t{font-weight:700; color:var(--ink); font-size:11.5px;}
+.legend .k{display:inline-flex; align-items:center; gap:6px; white-space:nowrap;}
+.legend .sw2{width:20px; height:14px; border-radius:4px; border:1.5px solid; flex:0 0 auto; position:relative; overflow:hidden;}
+.legend .sw2 i{position:absolute; left:0; top:0; bottom:0; width:5px;}
+.legend .note{width:100%; line-height:1.7; border-top:1px solid var(--line); padding-top:9px; margin-top:2px;}
+.legend .note b{color:var(--ink);}
+
+/* ---------- 予約の詳細 ---------- */
+.det .row{display:flex; gap:10px; font-size:12.5px; padding:6px 0; border-bottom:1px solid var(--line);}
+.det .row:last-child{border-bottom:none;}
+.det .row .k{width:92px; flex:0 0 92px; color:var(--mut); font-size:11.5px;}
+.det .row .v{flex:1;}
+.det .warnbox{
+  background:var(--danger-soft); border:1px solid rgba(196,52,43,.3); border-radius:10px;
+  padding:10px 12px; font-size:12px; color:#8C2F28; line-height:1.7; margin:10px 0 2px;
+}
+.det .okbox{
+  background:var(--ok-soft); border:1px solid rgba(46,139,95,.3); border-radius:10px;
+  padding:10px 12px; font-size:12px; color:#2C5E48; line-height:1.7; margin:10px 0 2px;
+}
+.det a{color:var(--teal-3); font-weight:700;}
+
+@media (max-width:900px){
+  .lane-h{width:140px; flex:0 0 140px;}
+  .blockstat{margin-left:0; width:100%;}
+}
+</style>
+</head>
+<body>
+<div id="shell"></div>
+
+<!-- 予約詳細 -->
+<div class="mask" id="mask">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="dTitle">
+    <h3 id="dTitle">—</h3>
+    <div class="mdate" id="dSub">—</div>
+    <div class="det" id="dBody"></div>
+    <div class="mactions" style="margin-top:14px">
+      <button class="btn ghost" id="dClose">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script src="../assets/hpbdata.js"></script>
+<script src="../assets/shell.js"></script>
+<script src="../assets/mockbar.js"></script>
+<script src="./schedule_pc.js"></script>
+</body>
+</html>

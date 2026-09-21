@@ -1,6 +1,6 @@
-# SalonOne 改善モック 引き渡しメモ v0.1
+# SalonOne 改善モック 引き渡しメモ v0.2
 
-作成日: 2026-08-20 ／ 対象: `minimo_mobile_mock.html` `kintai_mock.html`
+作成日: 2026-08-20（v0.1）／ 更新: 2026-09-21（v0.2 で §7 HPB 2ページ運用・§8 オフとオプション を追加）
 
 ---
 
@@ -220,6 +220,22 @@ GET   /api/attendance/export?month=YYYY-MM      // CSV
 11. **日跨ぎ勤務** 深夜営業サロン向けに 24:00 を超える退勤を許容するか
 12. **GPS範囲外の打刻** 完全ブロックか、理由付きで許可して管理者に通知か
 
+### HPB 2ページ運用（v0.2 追加）
+13. **1店舗あたりの連携ページ数の上限** モックはN枚を許す作りにしてある
+14. **同期間隔10分を短縮できるか** ★ ここが重複の発生窓そのもの。最優先で詰めたい
+15. **重複を検知したとき、どちらの予約を残すか** 先着／本ページ優先／人が判断、の既定
+16. **ブロックした枠をHPB側でどう表現するか** 予約として入れるか、受付停止にするか
+17. **連携解除したときの過去予約** そのページ由来の予約を残すか、印を付けるか
+18. **サロンボードのパスワード変更を検知したときの通知先**
+
+### オフとオプション（v0.2 追加）
+19. **オフの選択肢は店舗ごとで足りるか** ブランド共通のほうが運用が楽なら要検討
+20. **オフありの予約とHPBメニューの突き合わせ** HPBは「［オフ込］」のように
+    1メニューへ畳んでいることが多く、こちらの分解した形と一致しない
+21. **「提案を必須にする」を使う店舗があるか** 既定はOFFにしてある
+22. **オプションを何件まで出すか** 多いと離脱する。上限を決めたい
+23. **キャンセル料の規定にオフ・オプションぶんを含めるか**
+
 ---
 
 ## 6. Claude Code への指示文（雛形）
@@ -245,3 +261,168 @@ SalonOne（Next.js App Router / next-intl / Tailwind）の改修です。
 
 勤怠側も同様に、対象を `/punch` `/time-tracking` に差し替えて指示してください。
 **時間表記の小数バグ（§3-1①）は独立した修正として先に出す**のが安全です。
+
+---
+
+## 7. HPB 2ページ運用（v0.2）
+
+対象モック: `screens/hpb_link.html` / `screens/schedule_pc.html`
+ダミーデータ: `assets/hpbdata.js`
+
+### 7-1. 前提
+
+1つの店舗がHPBのページを2枚持つことがある（ヘア／美容整体のページ＋ネイル＆アイのページ）。
+ページごとにサロンボードのログインIDが別なので、**店舗 : 連携ページ = 1 : N** で持つ。
+
+`role` は `main` / `sub` だが、これは登録順のラベルでしかなく機能差はない。
+重複防止はどちらのページが起点でも同じように働く。
+
+### 7-2. データモデル案
+
+```
+hpb_pages           id, shop_id, role(main|sub), name, genre,
+                    login_id, password_enc, salon_id,
+                    status(ok|expired|none), last_synced_at,
+                    auto_sync BOOL, auto_account BOOL
+
+hpb_linkages        id, page_id, kind(staff|menu|equipment),
+                    salonone_id, hpb_code NULL, excluded BOOL
+                      hpb_code NULL かつ excluded=false  → 未設定（要対応）
+                      excluded=true                      → このページには出さない
+                      hpb_code NOT NULL                  → 紐付け済み
+
+hpb_slot_blocks     id, page_id, lane_type(staff|equipment), lane_id,
+                    starts_at, ends_at,
+                    caused_by_reservation_id,
+                    state(done|pending|unmapped|skip)
+
+reservations        ... , hpb_page_id NULL   NULL は minimo / 直接入力 / 強制リンク
+```
+
+`hpb_linkages` の3状態が肝。`excluded`（意図的に載せない）と
+`hpb_code IS NULL`（未設定）を**必ず区別して持つ**こと。
+ここを1つのNULLに畳むと、重複事故の原因が追えなくなる。
+
+### 7-3. ページ間ブロックの仕様
+
+**常時有効。ON/OFFの設定は作らない。**
+
+1. どちらかのページに予約が入る
+2. その予約のスタッフ（と設備）を、もう一方のページの紐付けで引く
+3. 引けたら相手ページの同じ時間帯を閉じる → `state='done'`
+   - まだ同期していない → `state='pending'`
+   - 紐付けが未設定で引けない → `state='unmapped'` ★事故る
+   - 相手ページにそのスタッフを載せていない（`excluded`）→ `state='skip'`（正常）
+
+`pending` の窓（現行10分）が重複の発生源。§5-14 参照。
+
+### 7-4. API案
+
+```
+GET    /api/shops/:id/hpb-pages
+POST   /api/shops/:id/hpb-pages            追加連携（認証＋マスタ取得）
+POST   /api/hpb-pages/:id/reauth
+DELETE /api/hpb-pages/:id                  連携解除
+GET    /api/shops/:id/hpb-linkages?kind=staff
+PUT    /api/shops/:id/hpb-linkages         マトリクスをまとめて保存
+GET    /api/stores/:sid/reservations?date= page_id を含めて返す
+GET    /api/stores/:sid/slot-blocks?date=
+POST   /api/stores/:sid/hpb-pages/sync     「今すぐ反映」
+GET    /api/stores/:sid/reservation-conflicts?date=
+```
+
+### 7-5. 予約表の配色
+
+| 流入元 | 色 | 併用する手がかり |
+|---|---|---|
+| 本ページ | `#2E8B5F` | バッジ「本」 |
+| サブページ | `#4A3AA7` | **左端の斜線レール** ＋ バッジ「ネ」 |
+| minimo | `#B4740B` | バッジ「ミ」 |
+| 直接入力・強制リンク | `#106258` | バッジ「フ」／なし |
+
+色は1つの意味にしか使えない。現行は色で「新規／予約中」を表しているが、
+その情報はブロック内のタグと重複しているので、色は流入元に割り当て直した。
+色だけに依存しないよう、サブページは斜線レールとバッジ文字を併用している。
+
+### 7-6. 実装時の注意
+
+- 同じ行で重なる予約は**段に分けて積む**こと。重ねて描くと、重複しているという
+  一番見せたい事実が隠れる（モックは貪欲法で段を割り当てている）
+- ページを1枚に絞ったビューでは、`state='skip'` のブロックは**描かない**。
+  代わりに行ごと「このページには出していません」にする。
+  空欄のままだと「予約が無い」と読めてしまう
+- 「今すぐ反映」を押しても、**すでに成立している重複は消えない**。
+  そう表示すること（どちらかをキャンセルする運用が必要）
+
+---
+
+## 8. ネイル／アイの「オフ」とオプションの提案（v0.2）
+
+対象モック: `screens/menu_settings.html` / `screens/forcelink_settings.html` /
+`screens/booking_form.html`
+ダミーデータ: `assets/menudata.js`
+
+### 8-1. 現状の課題
+
+オフの条件がメニュー名に書き込まれている
+（`【NEW OPEN記念】ワンカラー（ご新規様/自店オフ無料）¥6500→¥4800`）。
+システムは何も知らないので、オフの時間が枠に入らず、料金も自動で乗らない。
+
+### 8-2. データモデル案
+
+```
+off_sets      id, shop_id, genre(nail|eye), name, question
+off_choices   id, off_set_id, name, price, minutes, is_no_off BOOL, sort
+options       id, shop_id, genre, name, price, minutes
+menus         ... , off_set_id NULL, option_ids[]
+                off_set_id NULL → オフを聞かない
+force_links   ... , recommend_options BOOL,
+                    recommend_option_ids[]   空なら対象メニューの全候補,
+                    recommend_required BOOL  既定 false
+reservations  ... , off_choice_id NULL, option_ids[]
+```
+
+予約の枠の長さと会計の明細は、
+`menu.minutes + off_choice.minutes + Σ option.minutes` で作る。
+`assets/menudata.js` の `total()` がその純粋関数（移植先は `utils/booking.ts` 相当）。
+
+### 8-3. 責務の分け方
+
+| | 決める場所 | 予約時 | 選ばないと |
+|---|---|---|---|
+| オフ | メニュー（`menus.off_set_id`） | **必須** | 次に進めない |
+| オプション | 強制リンク（`force_links.recommend_options`） | 任意 | そのまま進める |
+
+メニュー側は「何が付けられるか」、強制リンク側は「今回それを勧めるか」。
+実際に出るのは**両方の AND**。片方だけで決めると、フォームごとの出し分けができないか、
+付けられない組み合わせを選べてしまう。
+
+### 8-4. 予約フォームの順番 ★
+
+```
+メニュー → オフ（必須） → オプション（任意） → 日時 → お客様情報
+```
+
+オフもオプションも所要時間を足すので、**空き枠の計算より前に確定させる**。
+日時のあとに置くと、選び直すたびに枠を取り直すことになる。
+
+実装上は
+- オフ未選択のあいだ、日時の欄はロックして理由を書く
+- 所要時間が変わったら、選択済みの枠が入るか再判定し、入らなければ外す
+- 入らなくなった枠は `×` ではなく `△` で出し、件数を明示する
+  （黙って消すと壊れているように見える）
+
+### 8-5. API案
+
+```
+GET/PUT  /api/shops/:id/off-sets
+GET/PUT  /api/shops/:id/options
+PATCH    /api/menus/:id                    off_set_id, option_ids
+GET/PATCH /api/force-links/:id             recommend_options, recommend_option_ids
+GET      /api/f/:slug                      公開フォームの定義（ログイン不要）
+GET      /api/f/:slug/availability?duration=105
+POST     /api/f/:slug/reservations         off_choice_id, option_ids を含む
+```
+
+`availability` は**所要時間を引数に取る**こと。
+メニュー単体の所要時間で枠を返すと、オフを足した瞬間に嘘になる。
